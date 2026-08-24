@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- 本工作台通过腾讯云 CloudBase 部署托管；业务数据存于浏览器本地缓存并同步至云端 PostgreSQL，API Key 随数据同步上云。 -->
+<!-- 本工作台部署于 GitHub Pages；业务数据存于浏览器本地缓存与 IndexedDB，并经 Cloudflare 反代同步至 Supabase 云端 PostgreSQL，API Key 随数据同步上云。 -->
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -136,6 +136,9 @@ input[type=file]::file-selector-button{margin-right:10px;padding:7px 13px;border
 /* ===================== 筛选 / 标签 ===================== */
 .filters{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:center}
 .filters select{width:auto;min-width:130px;padding:10px 12px}
+.lib-date{padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);font-size:13px;font-family:inherit}
+.lib-date-sep{color:var(--ink2);font-size:13px}
+[data-theme="dark"] .lib-date{background:var(--surface);color:var(--ink);border-color:var(--line)}
 .chip{display:inline-flex;align-items:center;gap:5px;background:var(--brand-soft);color:var(--brand-ink);border-radius:18px;padding:5px 12px;font-size:12px;font-weight:600}
 .chip.x{background:#fee2e2;color:var(--bad)}
 .chip.ok{background:#dcfce7;color:var(--ok)}
@@ -173,7 +176,7 @@ input[type=file]::file-selector-button{margin-right:10px;padding:7px 13px;border
 .sheet{background:#fff;width:100%;max-width:620px;border-radius:22px 22px 0 0;max-height:92vh;overflow:auto;padding:24px 22px calc(24px + env(safe-area-inset-bottom));animation:up .25s var(--ease);box-shadow:0 -10px 40px rgba(0,0,0,.18)}
 @media(min-width:768px){.sheet{border-radius:22px}}
 .sheet.sheet-wide{max-width:min(930px,94vw)}
-.sheet.sheet-edit{max-width:930px}
+.sheet.sheet-edit{max-width:744px}
 @keyframes up{from{transform:translateY(40px);opacity:.5}to{transform:none;opacity:1}}
 .sheet h3{margin:0 0 18px;font-size:19px;font-weight:700;display:flex;align-items:center;justify-content:space-between;color:var(--ink)}
 .sheet h3 .x{border:none;background:var(--surface-2);border-radius:10px;width:34px;height:34px;font-size:18px;color:var(--sub);cursor:pointer;transition:background .15s}
@@ -494,6 +497,10 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
             <option value="">全部引擎</option>
           </select>
           <input id="libSearch" placeholder="搜索标题/关键词" style="flex:1;min-width:140px">
+          <input id="libDateFrom" type="date" class="lib-date" title="生成日期（起）">
+          <span class="lib-date-sep">至</span>
+          <input id="libDateTo" type="date" class="lib-date" title="生成日期（止）">
+          <button class="btn ghost sm" id="libDateClear" type="button">清除日期</button>
         </div>
         <div class="kb-filters" id="libFilters">
           <button class="chip-f active" data-cat="">全部</button>
@@ -597,7 +604,7 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
       <section class="panel" id="p_set">
         <div class="card">
           <h3><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>API 设置</h3>
-          <div class="note"><b>安全提示：</b>API Key 会保存在你浏览器本地缓存，并随数据同步到腾讯云 CloudBase（用于多设备共享）。当前为匿名共享工作区，任何拿到链接的人都能读取这份云端数据，请勿使用高权限的生产密钥，并仅与可信人员分享链接。</div>
+          <div class="note"><b>安全提示：</b>API Key 保存在你浏览器本地缓存，并随业务数据经 Cloudflare 反代同步到 Supabase 云端（用于多设备共享）。当前为匿名共享工作区，任何拿到链接的人都能读取这份云端数据，请勿填写高权限的生产密钥，并仅与可信人员分享链接。本地与云端任一端异常都不会导致 Key 丢失，但请避免与他人共用同一工作区链接。</div>
           <div class="field"><label>API Key <span class="hint">如 sk-xxxx</span></label><input id="cfg_key" type="password" placeholder="在此粘贴你的 API Key" autocomplete="off"></div>
           <div class="field"><label>接口地址 (Base URL)</label><input id="cfg_url" placeholder="https://api.deepseek.com/v1"></div>
           <div class="field"><label>模型名</label><input id="cfg_model" placeholder="deepseek-chat"></div>
@@ -611,7 +618,7 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
 
         <div class="card">
           <h3><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>数据备份</h3>
-          <p class="sub">数据已同步到腾讯云 CloudBase（多设备实时共享）。仍建议定期导出备份作为额外保险，重装浏览器或清缓存前尤其需要。</p>
+          <p class="sub">数据会自动同步到 Supabase 云端（多设备实时共享），本地同时以浏览器缓存与 IndexedDB 双重留存。仍建议定期导出 JSON 备份作为额外保险——尤其在重装浏览器、清理缓存或退出匿名工作区前，云端免费项目也可能因长期闲置而暂停。</p>
           <div class="btn-row">
             <button class="btn ghost sm" id="btnExport">导出 JSON 备份</button>
             <button class="btn ghost sm" id="btnImport">导入恢复</button>
@@ -623,7 +630,7 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
         <div class="card">
           <h3><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>关于本系统</h3>
           <p class="sub">SeekGeo（GEO 软文工作台）—— 面向 GEO（生成式引擎优化）的一站式内容生产系统。集成「企业画像、企业知识库、文章训练、风格规范、软文库、生成器」六大模块：先沉淀品牌素材与知识，再按八大分类训练范文、提炼专属写作风格，最后一键生成更易被 AI 搜索引擎（ChatGPT / Perplexity / 豆包 / 元宝等）收录与引用的软文。</p>
-          <p class="kv">数据已接入腾讯云 CloudBase，云端存储 + 多设备实时同步；离线时自动降级为本地缓存，联网后自动续传。</p>
+          <p class="kv">数据本地以浏览器缓存 + IndexedDB 双重留存，并经 Cloudflare 反代同步至 Supabase 云端实现多设备实时共享；离线时自动降级为本地存储，联网后自动续传。企业知识库已升级为 IndexedDB 持久化，刷新与重启浏览器均不会丢失。系统由 WorkBuddy 构建并托管于 GitHub Pages。</p>
         </div>
 
         <div class="card">
@@ -658,7 +665,7 @@ function fmtTime(s,fallback){
   if(m)return m[1]+"-"+m[2]+"-"+m[3]+" "+m[4]+":"+m[5];
   return t;
 }
-var libPage=1,entPage=1,kbPage=1,trainPage=1,specPage=1,kbCat="",libCat="",PAGE_SIZE=10,trainSel={},trainCat="",specCat="";
+var libPage=1,entPage=1,kbPage=1,trainPage=1,specPage=1,kbCat="",libCat="",PAGE_SIZE=10,trainSel={},trainCat="",specCat="",libFrom="",libTo="";
 var KB_CATS=["公司信息","产品介绍","产品信息","客户案例"];
 function kbCatColor(c){if(c==="公司信息")return "#0891b2";if(c==="产品介绍")return "#16a34a";if(c==="产品信息")return "#7c3aed";if(c==="客户案例")return "#d97706";return "#64748b";}
 var LIB_CATS=["实测/评测报告","避坑/风险警示","选型/采购指南","原理技术解析","入门科普","行业报告","渠道服务","成本分析"];
@@ -1188,6 +1195,7 @@ function openEntEdit(id){
     '<div class="field"><label>品牌关键词</label><input id="e2_kw" value="'+esc(r.keywords||"")+'"></div></div>'+
     '<div class="field"><label>表述禁忌</label><input id="e2_avoid" value="'+esc(r.avoid||"")+'"></div>'+
     '<button class="btn" id="e2_save">保存修改</button>';
+  sheet.classList.add("sheet-edit");
   $("#mask").classList.add("show");
   $("[data-x]",$("#sheet")).addEventListener("click",closeSheet);
   $("#e2_save").addEventListener("click",function(){
@@ -1329,6 +1337,9 @@ function renderLib(){
     if(en && (r.targetEngines||[]).indexOf(en)<0)return false;
     if(libCat && (r.tone||"")!==libCat)return false;
     if(q && (r.title+r.keywords).toLowerCase().indexOf(q)<0)return false;
+    var d=(r.createdAt||"").slice(0,10);
+    if(libFrom && d && d<libFrom)return false;
+    if(libTo && d && d>libTo)return false;
     return true;
   });
   recs.sort(function(a,b){return (b.updatedAt||b.createdAt||"").localeCompare(a.updatedAt||a.createdAt||"");});
@@ -2315,6 +2326,9 @@ async function init(){
   });
   // filters
   ["#libEngine","#libSearch"].forEach(function(s){$(s).addEventListener("input",function(){libPage=1;renderLib();});});
+  function applyLibDate(){libFrom=$("#libDateFrom").value||"";libTo=$("#libDateTo").value||"";libPage=1;renderLib();}
+  ["#libDateFrom","#libDateTo"].forEach(function(s){$(s).addEventListener("change",applyLibDate);});
+  $("#libDateClear").addEventListener("click",function(){$("#libDateFrom").value="";$("#libDateTo").value="";libFrom="";libTo="";libPage=1;renderLib();});
   // 企业知识库上传
   $("#kbFile").addEventListener("change",handleKBUpload);
   // 企业知识库分类筛选
