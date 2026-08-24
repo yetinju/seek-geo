@@ -788,8 +788,7 @@ function buildPayload(cur){
 function payloadHash(p){if(!p)return "";var c=Object.assign({},p);delete c.savedAt;return JSON.stringify(c);}
 async function syncToCloud(opts){
   opts=opts||{};
-  console.log("STC:0 start silent=", !!opts.silent, "cloudReady=", _cloudReady, "syncing=", _syncing);
-  if(!_cloudReady||_syncing){console.log("STC:0b early return");return;}
+  if(!_cloudReady||_syncing)return;
   _syncing=true;
   try{
     // 先静默读云端并比对；如果和云端完全一致，直接跳过，绝不闪烁状态
@@ -798,7 +797,7 @@ async function syncToCloud(opts){
         var cr=await _db.from("geo_store").select("*").eq("id","default").maybeSingle();
       if(cr.error)throw cr.error; // 会话失效/网络错误 → 交给 markCloudDead，绝不用本地覆盖云端
       if(cr.data&&cr.data.payload){cur=cr.data.payload;curUpdatedAt=cr.data.updated_at;}
-    }catch(e){ console.log("STC:1b read failed", e&&e.message); _cloudReady=false; markCloudDead("sync read failed: "+(e&&e.message||e)); return; }
+    }catch(e){ _cloudReady=false; markCloudDead("sync read failed: "+(e&&e.message||e)); return; }
     var payload=buildPayload(cur);
     // 与云端逐字段一致则跳过回写，避免多端互相触发写导致"乒乓写/无限轮询"
     if(cur && payloadHash(cur)===payloadHash(payload)){
