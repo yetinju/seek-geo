@@ -542,10 +542,10 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
       <section class="panel" id="p_kb">
         <div class="card">
           <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/></svg>上传企业知识文档</h3>
-          <p class="sub">上传企业介绍、产品手册、品牌资料、行业报告等，生成软文时可一键带入作为参考素材。</p>
+          <p class="sub">上传企业介绍、产品手册、品牌资料、行业报告等素材，生成软文时可一键带入作为参考依据。文档以 IndexedDB 本地持久化（刷新不丢），并经 Cloudflare 反代同步至 Supabase 云端，多设备共享；当前为匿名共享工作区，请勿上传机密或敏感文件。</p>
           <div class="field"><label>文档分类 <span class="hint">上传后归入对应分类</span></label><select id="kbCatSel"><option>公司信息</option><option>产品介绍</option><option>产品信息</option><option>客户案例</option></select></div>
           <div class="field"><label>选择文件 <span class="hint">支持多文件，单文件 ≤ 2MB</span></label><input type="file" id="kbFile" multiple accept="*/*"></div>
-          <div class="note">📄 文本类（txt / md / csv / json）保存原文；📝 Word（docx）提取文字内容，若含图片则内嵌图片一起预览，均可直接在「查看」里阅读。🗎 图片 / PDF / Excel 等以原始文件保存，查看时在新标签打开。所有内容<b>会同步到腾讯云 CloudBase</b>，多设备共享；当前为匿名共享工作区，请勿上传机密或敏感文件。</div>
+          <div class="note">📄 文本类（txt / md / csv / json）保存原文；📝 Word（docx）提取文字内容，若含图片则内嵌图片一起预览，均可直接在「查看」里阅读。🗎 图片 / PDF / Excel 等以原始文件保存，查看时在新标签打开。所有内容以 <b>IndexedDB 本地持久化</b>并经 Cloudflare 反代<b>同步至 Supabase 云端</b>，多设备共享；当前为匿名共享工作区，请勿上传机密或敏感文件。</div>
         </div>
         <div class="kb-filters" id="kbFilters">
           <button class="chip-f active" data-cat="">全部</button>
@@ -561,10 +561,10 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
       <section class="panel" id="p_train">
         <div class="card">
           <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>训练软文风格</h3>
-          <p class="sub">上传 (.txt / .md / .docx) 软文范文并归入对应分类；在下方「按分类训练」中，可针对<i>每个分类</i>下的范文单独训练，生成该分类专属的「写作风格规范」。之后在「生成器」生成时，系统会自动套用与所选「行文风格」相匹配的分类规范。</p>
+          <p class="sub">上传 (.txt / .md / .docx) 软文范文并归入对应分类；在下方「按分类训练」中，可针对<i>每个分类</i>下的范文单独训练，提炼该分类专属的「写作风格规范」。之后在「生成器」生成时，系统会自动套用与所选「行文风格」相匹配的分类规范。训练范文以 IndexedDB 本地持久化，并经 Cloudflare 反代同步至 Supabase 云端，多设备共享。</p>
           <div class="field"><label>范文分类 <span class="hint">上传后归入对应分类</span></label><select id="trainCatSel"></select></div>
           <div class="field"><label>上传软文范文 <span class="hint">可多选 · .txt / .md / .docx · 单文件 ≤ 2MB</span></label><input type="file" id="trainFile" multiple accept=".txt,.md,.markdown,.text,.csv,.docx"></div>
-          <div class="note">上传后，到下方「按分类训练」选择对应分类、点「训练此分类」即可；训练范文会随数据同步到腾讯云 CloudBase（多设备共享）。</div>
+          <div class="note">上传后，到下方「按分类训练」选择对应分类、点「训练此分类」即可；训练范文以 IndexedDB 本地持久化，并经 Cloudflare 反代同步至 Supabase 云端（多设备共享）。</div>
         </div>
         <h3 class="sec-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>按分类训练</h3>
         <div class="cat-train-grid" id="trainCatGrid"></div>
@@ -957,7 +957,7 @@ async function loadFromCloud(){
   }catch(e){console.error("loadFromCloud",e);throw e;} // 网络/超时错误上抛，交给 initCloud 降级为离线·本地
   finally{_suppressSave=false;}
 }
-/* 把 CloudBase 连接失败原因翻译成给用户的中文提示，便于判断是「环境被停用/欠费」还是「网络/限流」 */
+/* 把云端（Supabase）连接失败原因翻译成给用户的中文提示，便于判断是「环境被停用/欠费」还是「网络/限流」 */
 function cloudErrHint(e){
   var s=String((e&&(e.message||e.error||e.description))||e||"");
   if(/paused|is paused|project .* (paused|disabled)|Project is not active|not active/i.test(s))
@@ -967,7 +967,7 @@ function cloudErrHint(e){
   if(/invalid apikey|apikey|JWT|role .* not|permission|unauthorized|401|403/i.test(s))
     return "Supabase 凭证无效，请检查 SUPABASE_URL / SUPABASE_ANON_KEY 是否正确";
   if(/res_stopped|套餐过期|欠费|资源用尽|资源已停止|ResourceExhausted/i.test(s))
-    return "云端数据库已停用（很可能套餐过期或账号欠费），请在 CloudBase 控制台恢复环境后再同步";
+    return "云端数据库已停用（很可能套餐过期或账号欠费），请在对应云端控制台恢复环境后再同步";
   if(/RATE_LIMITED|Too Many Requests|429/i.test(s))
     return "云端请求过于频繁被限流，请稍候再点同步";
   if(/network|fetch|timeout|连接|ECONN|ENOTFOUND|aborted/i.test(s))
