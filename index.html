@@ -2142,8 +2142,12 @@ function renderSpecs(){
   specPage=Math.min(Math.max(1,specPage),Math.max(1,Math.ceil(total/PAGE_SIZE)));
   var pageItems=list.slice((specPage-1)*PAGE_SIZE,specPage*PAGE_SIZE);
   var activeId=getActiveSpecId();
+  // 当前使用规范：优先用用户显式设置的；若未设置或指向已删除项，则默认回退到当前列表第一项
+  // （因此「某分类下仅有一个规范」或「从未设置过」时，会自动默认显示为「当前使用」，与生成器实际取规范行为一致）
+  var activeExists=activeId && list.some(function(x){return x.id===activeId;});
+  var effectiveActive=activeExists ? activeId : (list[0]?list[0].id:null);
   box.innerHTML=pageItems.map(function(r){
-    var isActive=(r.id===activeId)||(!activeId&&r.id===list[0].id);
+    var isActive=(r.id===effectiveActive);
     var preview=(r.content||"").replace(/\s+/g," ").slice(0,120);
     return '<div class="item" data-id="'+r.id+'">'+
       '<div class="top"><div class="ti">'+esc(r.name||"风格规范")+'</div>'+(isActive?'<span class="chip" style="color:#047857;background:#d1fae5">✓ 当前使用</span>':'')+'</div>'+
