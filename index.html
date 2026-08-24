@@ -136,9 +136,16 @@ input[type=file]::file-selector-button{margin-right:10px;padding:7px 13px;border
 /* ===================== 筛选 / 标签 ===================== */
 .filters{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:center}
 .filters select{width:auto;min-width:130px;padding:10px 12px}
-.lib-date{padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);font-size:13px;font-family:inherit}
-.lib-date-sep{color:var(--ink2);font-size:13px}
+.lib-date-group{display:inline-flex;align-items:center;gap:8px}
+.lib-date{padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink);font-size:13px;font-family:inherit;line-height:1.2;transition:border-color .15s var(--ease),box-shadow .15s var(--ease)}
+.lib-date:hover{border-color:var(--brand)}
+.lib-date:focus{outline:none;border-color:var(--brand);box-shadow:0 0 0 3px var(--brand-soft)}
+.lib-date::-webkit-calendar-picker-indicator{cursor:pointer;opacity:.55;transition:opacity .15s}
+.lib-date:hover::-webkit-calendar-picker-indicator,.lib-date:focus::-webkit-calendar-picker-indicator{opacity:.85}
+.lib-date-sep{color:var(--ink2);font-size:13px;user-select:none}
 [data-theme="dark"] .lib-date{background:var(--surface);color:var(--ink);border-color:var(--line)}
+[data-theme="dark"] .lib-date::-webkit-calendar-picker-indicator{filter:invert(1)}
+[data-theme="dark"] .lib-date:hover{border-color:var(--brand)}
 .chip{display:inline-flex;align-items:center;gap:5px;background:var(--brand-soft);color:var(--brand-ink);border-radius:18px;padding:5px 12px;font-size:12px;font-weight:600}
 .chip.x{background:#fee2e2;color:var(--bad)}
 .chip.ok{background:#dcfce7;color:var(--ok)}
@@ -496,11 +503,13 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
           <select id="libEngine">
             <option value="">全部引擎</option>
           </select>
+          <span class="lib-date-group">
+            <input id="libDateFrom" type="date" class="lib-date" title="生成日期（起）">
+            <span class="lib-date-sep">至</span>
+            <input id="libDateTo" type="date" class="lib-date" title="生成日期（止）">
+            <button class="btn ghost sm" id="libDateClear" type="button">清除</button>
+          </span>
           <input id="libSearch" placeholder="搜索标题/关键词" style="flex:1;min-width:140px">
-          <input id="libDateFrom" type="date" class="lib-date" title="生成日期（起）">
-          <span class="lib-date-sep">至</span>
-          <input id="libDateTo" type="date" class="lib-date" title="生成日期（止）">
-          <button class="btn ghost sm" id="libDateClear" type="button">清除日期</button>
         </div>
         <div class="kb-filters" id="libFilters">
           <button class="chip-f active" data-cat="">全部</button>
@@ -630,7 +639,7 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
         <div class="card">
           <h3><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>关于本系统</h3>
           <p class="sub">SeekGeo（GEO 软文工作台）—— 面向 GEO（生成式引擎优化）的一站式内容生产系统。集成「企业画像、企业知识库、文章训练、风格规范、软文库、生成器」六大模块：先沉淀品牌素材与知识，再按八大分类训练范文、提炼专属写作风格，最后一键生成更易被 AI 搜索引擎（ChatGPT / Perplexity / 豆包 / 元宝等）收录与引用的软文。</p>
-          <p class="kv">数据本地以浏览器缓存 + IndexedDB 双重留存，并经 Cloudflare 反代同步至 Supabase 云端实现多设备实时共享；离线时自动降级为本地存储，联网后自动续传。企业知识库已升级为 IndexedDB 持久化，刷新与重启浏览器均不会丢失。系统托管于 GitHub Pages。</p>
+          <p class="kv">数据本地以浏览器缓存 + IndexedDB 双重留存，并经 Cloudflare 反代同步至 Supabase 云端实现多设备实时共享；离线时自动降级为本地存储，联网后自动续传。企业知识库已升级为 IndexedDB 持久化，刷新与重启浏览器均不会丢失。系统由 WorkBuddy 构建并托管于 GitHub Pages。</p>
         </div>
 
         <div class="card">
@@ -1210,12 +1219,12 @@ function openEntAdd(){
   var sheet=$("#sheet");
   sheet.innerHTML='<h3>新增企业画像 <button class="x" data-x>×</button></h3>'+
     '<div class="field"><label>企业 / 品牌名称 <span class="hint">必填</span></label><input id="e2_name" placeholder="如：声谷科技"></div>'+
-    '<div class="row2"><div class="field"><label>所属行业</label><input id="e2_ind" placeholder="如：仪器仪表"></div>'+
+    '<div class="row2"><div class="field"><label>所属行业</label><input id="e2_ind" placeholder="如：消费电子"></div>'+
     '<div class="field"><label>品牌调性</label><select id="e2_tone"><option>专业严谨</option><option>亲切温暖</option><option>年轻活力</option><option>高端奢华</option><option>科技未来</option></select></div></div>'+
-    '<div class="field"><label>品牌定位 / Slogan</label><input id="e2_slogan" placeholder="如：测试测量设备综合服务商"></div>'+
-    '<div class="field"><label>核心产品 / 服务</label><input id="e2_prod" placeholder="如：传感器，数据采集"></div>'+
-    '<div class="field"><label>目标人群</label><input id="e2_aud" placeholder="如：测试工程师"></div>'+
-    '<div class="field"><label>核心卖点 / 差异化</label><textarea id="e2_sell" placeholder="如：高精度"></textarea></div>'+
+    '<div class="field"><label>品牌定位 / Slogan</label><input id="e2_slogan" placeholder="如：为通勤者而生"></div>'+
+    '<div class="field"><label>核心产品 / 服务</label><input id="e2_prod" placeholder="如：降噪耳机、智能音箱"></div>'+
+    '<div class="field"><label>目标人群</label><input id="e2_aud" placeholder="如：城市通勤族、学生党"></div>'+
+    '<div class="field"><label>核心卖点 / 差异化</label><textarea id="e2_sell" placeholder="如：自研降噪芯片、40h 续航"></textarea></div>'+
     '<div class="row2"><div class="field"><label>官网</label><input id="e2_site" placeholder="https://"></div>'+
     '<div class="field"><label>品牌关键词</label><input id="e2_kw" placeholder="逗号分隔"></div></div>'+
     '<div class="field"><label>表述禁忌 <span class="hint">选填，生成时规避</span></label><input id="e2_avoid" placeholder="如：绝对、第一（避免违规）"></div>'+
