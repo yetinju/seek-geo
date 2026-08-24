@@ -685,7 +685,7 @@ function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2
 /* ============ 云同步（Supabase PostgreSQL · 免费层） ============ */
 /* 在 Supabase 控制台 Project Settings → API 复制 Project URL 与 anon public key 替换下面两项。
    数据表需先在建表 SQL 中创建（见交付的 supabase_setup.sql）。 */
-var SUPABASE_URL="https://sojemfuateixrovzvvcw.supabase.co";
+var SUPABASE_URL="https://geo-proxy-drx.pages.dev"; // 经 Cloudflare Pages 反代 supabase.co，解决大陆直连 supabase.co 被干扰导致“一直连接云端”
 var SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNvamVtZnVhdGVpeHJvdnp2dmN3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc1MjgyMTMsImV4cCI6MjEwMzEwNDIxM30.t1WkrqQcCi6TDs-jVE0k_TrHo43XsnxWfvo9rtNSh7M";
 var _db=null,_cloudReady=false,_suppressSave=false,_saveTimer=null,_lastSyncAt=null,_initRetryTimer=null,_lastHash=null,_bc=null,_pollTimer=null,_keepAliveTimer=null,_syncing=false,_cloudTomb={},_cloudLastErr="",_cloudStopped=false;
 /* 合并本地与云端数组：按 id 取并集，本地独有保留、云端独有/同 id 覆盖；无 id 的项按内容去重。绝不丢失任一方数据。 */
