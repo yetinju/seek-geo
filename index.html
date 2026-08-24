@@ -788,16 +788,19 @@ function buildPayload(cur){
 function payloadHash(p){if(!p)return "";var c=Object.assign({},p);delete c.savedAt;return JSON.stringify(c);}
 async function syncToCloud(opts){
   opts=opts||{};
-  if(!_cloudReady||_syncing)return;
+  console.log("STC:0 start silent=", !!opts.silent, "cloudReady=", _cloudReady, "syncing=", _syncing);
+  if(!_cloudReady||_syncing){console.log("STC:0b early return");return;}
   _syncing=true;
   try{
     // 先静默读云端并比对；如果和云端完全一致，直接跳过，绝不闪烁状态
     var cur=null,curUpdatedAt=null;
     try{
+      console.log("STC:1 before read");
       var cr=await _db.from("geo_store").select("*").eq("id","default").maybeSingle();
+      console.log("STC:2 after read", JSON.stringify(cr&&cr.error?cr.error:null));
       if(cr.error)throw cr.error; // 会话失效/网络错误 → 交给 markCloudDead，绝不用本地覆盖云端
       if(cr.data&&cr.data.payload){cur=cr.data.payload;curUpdatedAt=cr.data.updated_at;}
-    }catch(e){ _cloudReady=false; markCloudDead("sync read failed: "+(e&&e.message||e)); return; }
+    }catch(e){ console.log("STC:1b read failed", e&&e.message); _cloudReady=false; markCloudDead("sync read failed: "+(e&&e.message||e)); return; }
     var payload=buildPayload(cur);
     // 与云端逐字段一致则跳过回写，避免多端互相触发写导致"乒乓写/无限轮询"
     if(cur && payloadHash(cur)===payloadHash(payload)){
@@ -810,8 +813,11 @@ async function syncToCloud(opts){
     if(!opts.silent)setSync("同步中…","#fbbf24");
     var ts=new Date().toISOString();
     payload.savedAt=ts;
+    console.log("STC:3 before upsert");
     var r=await _db.from("geo_store").upsert({id:"default",payload:payload,updated_at:ts});
+    console.log("STC:4 after upsert", JSON.stringify(r&&r.error?r.error:null));
     if(r.error)throw r.error;
+    console.log("STC:5 before pushTomb");
     await pushTomb(); // 墓碑独立行同步，确保删除跨端持久化、不被文档 upsert 覆盖
     _lastSyncAt=ts;_lastHash=payloadHash(payload);
     // 关键：刚写入的是"本地 ∪ 云端"的合并结果，但本地内存/存储可能仍缺少云端独有项（例如并发编辑时本端先推再拉）。
@@ -889,15 +895,20 @@ function applyCloud(p, updatedAt){
 async function loadFromCloud(){
   _suppressSave=true;
   try{
+    console.log("LFC:1 before main fetch");
     var r=await _db.from("geo_store").select("*").eq("id","default").maybeSingle();
+    console.log("LFC:2 after main fetch", JSON.stringify(r&&r.error?r.error:null), "hasData=", !!(r&&r.data));
     if(r.error)throw r.error;
     if(r.data&&r.data.payload){
+      console.log("LFC:3 has payload, pullTomb");
       await pullTomb();
       applyCloud(r.data.payload, r.data.updated_at);
       if(r.data.updated_at)_lastSyncAt=r.data.updated_at;
       _lastHash=payloadHash(r.data.payload);
       _suppressSave=false;
+      console.log("LFC:4 before self-heal syncToCloud");
       await syncToCloud({silent:true}); // 后台静默回写合并后的完整数据，自愈云端可能缺失的内容
+      console.log("LFC:5 after self-heal");
       refreshAll(); // 关键：装入云端数据后立即重渲染，避免"首次连不上→恢复后内存有数据却界面不刷新"导致手机看不到已同步文档
       return true;
     }
