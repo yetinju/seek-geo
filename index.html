@@ -143,6 +143,7 @@ input[type=file]::file-selector-button{margin-right:10px;padding:7px 13px;border
 .lib-date::-webkit-calendar-picker-indicator{cursor:pointer;opacity:.55;transition:opacity .15s}
 .lib-date:hover::-webkit-calendar-picker-indicator,.lib-date:focus::-webkit-calendar-picker-indicator{opacity:.85}
 .lib-date-sep{color:var(--ink2);font-size:13px;user-select:none}
+.lib-date-clear{padding:10px 22px;min-width:84px;white-space:nowrap;font-size:13px;font-weight:600}
 [data-theme="dark"] .lib-date{background:var(--surface);color:var(--ink);border-color:var(--line)}
 [data-theme="dark"] .lib-date::-webkit-calendar-picker-indicator{filter:invert(1)}
 [data-theme="dark"] .lib-date:hover{border-color:var(--brand)}
@@ -507,9 +508,9 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
             <input id="libDateFrom" type="date" class="lib-date" title="生成日期（起）">
             <span class="lib-date-sep">至</span>
             <input id="libDateTo" type="date" class="lib-date" title="生成日期（止）">
-            <button class="btn ghost sm" id="libDateClear" type="button">清除</button>
+            <button class="btn ghost lib-date-clear" id="libDateClear" type="button">清除</button>
           </span>
-          <input id="libSearch" placeholder="搜索标题/关键词" style="flex:1;min-width:140px">
+          <input id="libSearch" placeholder="搜索标题/关键词" style="flex:0 1 220px;min-width:140px;max-width:240px">
         </div>
         <div class="kb-filters" id="libFilters">
           <button class="chip-f active" data-cat="">全部</button>
