@@ -906,9 +906,10 @@ async function loadFromCloud(){
       if(r.data.updated_at)_lastSyncAt=r.data.updated_at;
       _lastHash=payloadHash(r.data.payload);
       _suppressSave=false;
-      console.log("LFC:4 before self-heal syncToCloud");
-      await syncToCloud({silent:true}); // 后台静默回写合并后的完整数据，自愈云端可能缺失的内容
-      console.log("LFC:5 after self-heal");
+      // 注意：此处不再调用 syncToCloud 自愈回写——它会对同一 default 行再次发请求，
+      // 与上面的主读取、pullTomb 形成“连续第 3 次同 URL 大响应请求”，在 Cloudflare 代理上易触发 body 卡死。
+      // 数据已通过 applyCloud 装入内存，初次加载无需把刚读到的数据再写回云端。
+      console.log("LFC:4 before refreshAll");
       refreshAll(); // 关键：装入云端数据后立即重渲染，避免"首次连不上→恢复后内存有数据却界面不刷新"导致手机看不到已同步文档
       return true;
     }
