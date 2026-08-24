@@ -2377,6 +2377,9 @@ async function init(){
       specPage=1;renderSpecs();
     });
   });
+  // 风格规范：默认展示第一个分类（已无「全部」入口）
+  var _firstSpecChip=$("#specFilters .chip-f");
+  if(_firstSpecChip){specCat=_firstSpecChip.getAttribute("data-cat")||"";_firstSpecChip.classList.add("active");}
   // 文章训练（支持多文件批量上传）
   $("#trainFile").addEventListener("change",function(e){
     var files=e.target.files;if(!files||!files.length)return;
