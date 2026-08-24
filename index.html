@@ -681,6 +681,43 @@ var SYS_PROMPT = "你是一位精通 GEO（生成式引擎优化，Generative En
 function lsGet(k,def){try{var v=localStorage.getItem(K+k);return v==null?def:JSON.parse(v);}catch(e){return def;}}
 function lsSet(k,v){try{localStorage.setItem(K+k,JSON.stringify(v));}catch(e){} scheduleCloudSave();}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,8);}
+/* ============ 知识库本地持久化（IndexedDB） ============
+   问题：原实现把知识库文档（含 base64 全文）写入 localStorage('kbl')，
+   而 localStorage 仅有约 5MB 配额；一旦超限，localStorage.setItem 抛错被 lsSet 静默吞掉，
+   文档只残留在内存 _kbMem 中，刷新页面即丢失。
+   修复：改用 IndexedDB 作为本地主存储（配额数百 MB、写入为异步事务、不会因配额静默丢数据），
+   localStorage('kbl') 仅作为降级镜像保留。刷新时优先从 IndexedDB 恢复，云端不可用时也能还原。 */
+var _kbDB=null;
+function kbOpenDB(){return new Promise(function(res,rej){try{
+  if(typeof indexedDB==="undefined"||!indexedDB){rej(new Error("no indexedDB"));return;}
+  var req=indexedDB.open("seekgeo_kb",1);
+  req.onupgradeneeded=function(){var db=req.result;if(db.objectStoreNames&&!db.objectStoreNames.contains("docs"))db.createObjectStore("docs",{keyPath:"id"});};
+  req.onsuccess=function(){_kbDB=req.result;res(_kbDB);};
+  req.onerror=function(){rej(req.error||new Error("open failed"));};
+}catch(e){rej(e);}});}
+function kbIDBReady(){return _kbDB!=null;}
+function kbIDBGetAll(){return new Promise(function(res){if(!kbIDBReady()){res([]);return;}try{
+  var tx=_kbDB.transaction("docs","readonly"),st=tx.objectStore("docs"),out=[];
+  var cur=st.openCursor();
+  cur.onsuccess=function(){var c=cur.result;if(c){out.push(c.value);c.continue();}else{out.sort(function(a,b){return (b.uploadedAt||"").localeCompare(a.uploadedAt||"");});res(out);}};
+  cur.onerror=function(){res([]);};
+}catch(e){res([]);}});}
+function kbIDBPutAll(arr){return new Promise(function(res){if(!kbIDBReady()){res();return;}try{
+  var tx=_kbDB.transaction("docs","readwrite"),st=tx.objectStore("docs");
+  st.clear();
+  (Array.isArray(arr)?arr:[]).forEach(function(d){if(d&&d.id)st.put(d);});
+  tx.oncomplete=function(){res();};
+  tx.onerror=function(){res();};
+}catch(e){res();}});}
+async function kbInit(){
+  try{ await kbOpenDB(); }catch(e){ console.warn("IndexedDB 不可用，知识库将回退 localStorage（仍有配额风险）",e); }
+  var arr = kbIDBReady() ? (await kbIDBGetAll()) : [];
+  if(!arr.length){
+    var legacy = lsGet("kbl",[]);                 // 兼容升级前存于 localStorage 的旧数据，首次启动迁移进 IndexedDB
+    if(Array.isArray(legacy)&&legacy.length){ arr=legacy; if(kbIDBReady()) await kbIDBPutAll(legacy); }
+  }
+  _kbMem = Array.isArray(arr) ? arr : [];
+}
 
 /* ============ 云同步（Supabase PostgreSQL · 免费层） ============ */
 /* 在 Supabase 控制台 Project Settings → API 复制 Project URL 与 anon public key 替换下面两项。
@@ -1075,7 +1112,11 @@ function fillKbFromCloud(localArr,cloudArr){ // 用 cloud/import 源的完整 ht
   return (localArr||[]).map(function(x){var c=byId[x&&x.id];if(!c)return x;var o={};for(var k in x)o[k]=x[k];if(!o.html&&c.html)o.html=c.html;if(!o.text&&c.text)o.text=c.text;if(!o.data&&c.data)o.data=c.data;return o;});
 }
 function getKB(){return _kbMem;}
-function setKB(a){_kbMem=a||[];try{lsSet("kbl",_kbMem.map(stripKbHeavy));}catch(e){}}
+function setKB(a){_kbMem=a||[];
+  // 主存储：IndexedDB（大容量、可靠）；配额超限时由 IDB 兜底，不再因 localStorage 5MB 限制静默丢文档
+  if(kbIDBReady()){ kbIDBPutAll(_kbMem).catch(function(e){console.warn("知识库本地保存失败",e);}); }
+  try{ lsSet("kbl",_kbMem.map(stripKbHeavy)); }catch(e){ /* 降级镜像写入失败不影响 IndexedDB 主存储 */ }
+}
 function getTrain(){return lsGet("train",[]);}
 function setTrain(a){lsSet("train",a);}
 function getTrainSpec(){return lsGet("train_spec",null);}
@@ -2164,7 +2205,7 @@ function importBackup(file){
 }
 function clearAll(){
   if(!confirm("确定清空全部数据？此操作不可恢复，建议先导出备份。"))return;
-  localStorage.removeItem(K+"records");localStorage.removeItem(K+"ent");localStorage.removeItem(K+"kb");localStorage.removeItem(K+"train");localStorage.removeItem(K+"train_spec");localStorage.removeItem(K+"specs");localStorage.removeItem(K+"spec_active");localStorage.removeItem(K+"tomb");lsSet("seeded",true);
+  setRecords([]);setEnts([]);setKB([]);setTrain([]);setTrainSpec(null);setSpecs([]);setActiveSpecId(null);setTomb({});lsSet("seeded",true);
   refreshAll();toast("已清空");
 }
 
@@ -2233,6 +2274,7 @@ function applyTheme(t){
   }
 }
 async function init(){
+  await kbInit();            // 先从 IndexedDB 恢复本地知识库（云端不可用时也能还原，根治刷新丢文档）
   await initCloud();
   applyTheme(document.documentElement.dataset.theme==="dark"?"dark":"light");
   // 兼容旧版单条风格规范 → 列表
