@@ -938,9 +938,7 @@ async function initCloud(){
   setSync("连接云端…","#fbbf24");
   try{
     if(typeof supabase==="undefined"||!supabase.createClient)throw new Error("Supabase SDK 未加载，请检查网络后刷新页面");
-    _db=supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY,{
-      global:{fetch:function(u,o){var c=new AbortController();var t=setTimeout(function(){c.abort();},12000);return fetch(u,Object.assign({},o,{signal:c.signal})).finally(function(){clearTimeout(t);});}}
-    });
+    _db=supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
     _cloudReady=true; // 客户端已建立，后续 _db.from(...) 即可直连（anon key 已具备读写权限）
     var has=await loadFromCloud();
     if(has){lsSet("seeded",true);setSync("实时同步 ☁","#a7f3d0");}
