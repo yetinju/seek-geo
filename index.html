@@ -936,14 +936,8 @@ async function initCloud(){
     function _serialFetch(u,o){
       var run=function(){
         var c=new AbortController(),t=setTimeout(function(){c.abort();},15000);
-        // 给 GET 请求附加唯一缓存破坏参数：Cloudflare 代理对“同一 URL 的连续大响应请求”会触发
-        // body 卡死（第 3 次同类请求 RS 200 但 body 永不结束），使每次 GET 的 URL 都不同可彻底规避该 stall。
-        var uu=u, method=(o&&o.method)||"GET";
-        if(method==="GET"||method==="HEAD"){
-          uu=u+(u.indexOf("?")>=0?"&":"?")+"_cb="+(Date.now().toString(36))+Math.random().toString(36).slice(2,7);
-        }
         var oo=Object.assign({},o);oo.signal=c.signal;
-        return fetch(uu,oo).finally(function(){clearTimeout(t);});
+        return fetch(u,oo).finally(function(){clearTimeout(t);});
       };
       var p=_fetchChain.then(run,run);
       _fetchChain=p.then(function(){},function(){});
