@@ -953,7 +953,18 @@ function applyCloud(p, updatedAt){
     Object.keys(kbIds).forEach(function(id){if(kbBS[id]!==kbAS[id])kbDiff=true;});
     if(kbDiff){setKB(kbAfter);localChanged=true;}
   }
-  m(getTrain,setTrain,"train");
+  // 文章训练走专用合并：先按 id 并集（本地优先去重），再用云端元数据(含内容指纹 h)回填，使本地范文带上 h 供增量拉取比对；
+  // 仅补缺重字段、不覆盖本地已有 content/html（与知识库同一逻辑）。
+  if(Array.isArray(p.train)){
+    var trBefore=getTrain(), trMerged=mergeArrTomb(trBefore,p.train,tomb), trAfter=fillRecFromCloud(trMerged,p.train);
+    var trBS={},trAS={},trIds={},trDiff=false;
+    trBefore.forEach(function(x){if(x&&x.id)trBS[x.id]=JSON.stringify(x);});
+    trAfter.forEach(function(x){if(x&&x.id)trAS[x.id]=JSON.stringify(x);});
+    trBefore.forEach(function(x){if(x&&x.id)trIds[x.id]=1;});
+    trAfter.forEach(function(x){if(x&&x.id)trIds[x.id]=1;});
+    Object.keys(trIds).forEach(function(id){if(trBS[id]!==trAS[id])trDiff=true;});
+    if(trDiff){setTrain(trAfter);localChanged=true;}
+  }
   if(p.train_spec!==undefined)setTrainSpec(p.train_spec);
   m(getSpecs,setSpecs,"specs");
   if(p.spec_active!==undefined)setActiveSpecId(p.spec_active);
@@ -1153,11 +1164,11 @@ function stripKbHeavy(d){if(!d)return d;var MAX=1*1024*1024;function trim(s){ret
 function fillKbFromCloud(localArr,cloudArr){ // 用 cloud/import 源的完整 html/text/data 补全 local 缺失的重字段（仅补缺，不覆盖已有）。推送云端与从云端/导入回填共用，避免轻量元数据丢失完整内容。
   if(!Array.isArray(cloudArr)||!cloudArr.length)return localArr||[];
   var byId={};cloudArr.forEach(function(x){if(x&&x.id)byId[x.id]=x;});
-  return (localArr||[]).map(function(x){var c=byId[x&&x.id];if(!c)return x;var o={};for(var k in x)o[k]=x[k];if(!o.html&&c.html)o.html=c.html;if(!o.text&&c.text)o.text=c.text;if(!o.data&&c.data)o.data=c.data;return o;});
+  return (localArr||[]).map(function(x){var c=byId[x&&x.id];if(!c)return x;var o={};for(var k in x)o[k]=x[k];if(!o.html&&c.html)o.html=c.html;if(!o.text&&c.text)o.text=c.text;if(!o.data&&c.data)o.data=c.data;if(o.h==null&&c.h!=null)o.h=c.h;return o;});
 }
 /* 知识库大文件拆分为云端独立行（geo_store.id="kb:<docId>"），主行 default 仅存轻量元数据，
    解决「整行几 MB 过 Cloudflare 反代被 body 卡死 → 一直连接云端」的问题；多设备完整内容仍由独立行按需回填。 */
-function kbMeta(d){ if(!d)return d; return {id:d.id,name:d.name,type:d.type||"",size:d.size||0,uploadedAt:d.uploadedAt||"",category:d.category||"",kind:d.kind||"",preview:(d.text||"").slice(0,500)}; }
+function kbMeta(d){ if(!d)return d; return {id:d.id,name:d.name,type:d.type||"",size:d.size||0,uploadedAt:d.uploadedAt||"",category:d.category||"",kind:d.kind||"",preview:(d.text||"").slice(0,500),h:kbDocHash(d)}; }
 function kbCloudId(id){ return "kb:"+id; }
 function kbSyncPersist(){try{localStorage.setItem(K+"kbsync",JSON.stringify(_kbSynced));}catch(e){}} // 持久化知识库逐文档同步指纹，避免每次刷新重复全量推送
 function _h(s){ var h=5381; s=String(s==null?"":s); for(var i=0;i<s.length;i++){ h=((h<<5)+h+s.charCodeAt(i))>>>0; } return h; }
@@ -1187,25 +1198,46 @@ async function syncKbDocs(){
 async function fetchKbDocs(){
   if(!_cloudReady||!_db)return;
   try{
-    var r=await _db.from("geo_store").select("*").like("id","kb:%");
-    if(r.error)return;
-    var docs=(r.data||[]).map(function(x){return x&&x.payload&&x.payload.doc;}).filter(Boolean);
-    if(!docs.length)return;
-    setKB(fillKbFromCloud(getKB(),docs)); // 仅补缺重字段，不覆盖本地已有完整内容
-    docs.forEach(function(d){ if(d&&d.id)_kbSynced[d.id]=kbDocHash(d); });
-    kbSyncPersist();
+    // 1) 仅列出云端 kb 独立行的 id（返回体极小），避免一次性拉回全部文档正文
+    var lr=await _db.from("geo_store").select("id").like("id","kb:%");
+    if(lr.error)return;
+    var cloudIds=(lr.data||[]).map(function(x){return String(x.id||"").replace(/^kb:/,"");}).filter(Boolean);
+    var local=getKB()||[], localMap={}, need={};
+    local.forEach(function(d){ if(d&&d.id)localMap[d.id]=d; });
+    // 2) 本地缺完整内容、或内容指纹与云端元数据不符 → 需要取回
+    local.forEach(function(d){
+      if(!d||!d.id)return;
+      var full=!!(d.html||d.text||(typeof d.data==="string"?d.data:JSON.stringify(d.data||"")));
+      if(!full || (d.h!=null && d.h!==kbDocHash(d))) need[d.id]=1;
+    });
+    // 3) 云端有、本地完全没有的文档（新设备首次同步）
+    cloudIds.forEach(function(id){ if(!localMap[id]) need[id]=1; });
+    var ids=Object.keys(need); if(!ids.length)return;
+    // 4) 逐篇直取（而非整包搬运），仅传输真正需要的那几篇
+    var changed=false;
+    for(var i=0;i<ids.length;i++){
+      try{
+        var rr=await _db.from("geo_store").select("*").eq("id",kbCloudId(ids[i])).maybeSingle();
+        if(rr.error||!rr.data||!rr.data.payload||!rr.data.payload.doc)continue;
+        var doc=rr.data.payload.doc;
+        setKB(fillKbFromCloud(getKB(),[doc])); // 仅补缺重字段，不覆盖本地已有完整内容
+        _kbSynced[doc.id]=kbDocHash(doc);
+        changed=true;
+      }catch(e){ console.warn("fetchKbDocs single failed",e); }
+    }
+    if(changed)kbSyncPersist();
   }catch(e){ console.warn("fetchKbDocs failed",e); }
 }
 /* 文章训练范文大文件拆分为云端独立行（geo_store.id="rec:<recId>"），主行 default 仅存轻量元数据，
    与知识库拆行同一思路，解决「整行几 MB（大量长文堆积）过 Cloudflare 反代被 body 卡死」的问题；多设备完整内容仍由独立行按需回填。 */
-function recMeta(d){ if(!d)return d; var o={}; for(var k in d)o[k]=d[k]; delete o.content; delete o.html; o.preview=(String(d.content||d.html||"")).slice(0,500); return o; }
+function recMeta(d){ if(!d)return d; var o={}; for(var k in d)o[k]=d[k]; delete o.content; delete o.html; o.preview=(String(d.content||d.html||"")).slice(0,500); o.h=recDocHash(d); return o; }
 function recCloudId(id){ return "rec:"+id; }
 function recSyncPersist(){try{localStorage.setItem(K+"recsync",JSON.stringify(_recSynced));}catch(e){}} // 持久化文章逐篇同步指纹，避免每次刷新重复全量推送
 function recDocHash(d){ return _h((d&&d.content||"")+"\u0001"+(d&&d.html||"")+"\u0001"+(typeof (d&&d.notes)==="string"?d.notes:"")); }
 function fillRecFromCloud(localArr,cloudArr){ // 用独立行完整 content/html 补全本地缺失的重字段（仅补缺，不覆盖已有）
   if(!Array.isArray(cloudArr)||!cloudArr.length)return localArr||[];
   var byId={};cloudArr.forEach(function(x){if(x&&x.id)byId[x.id]=x;});
-  return (localArr||[]).map(function(x){var c=byId[x&&x.id];if(!c)return x;var o={};for(var k in x)o[k]=x[k];if(!o.content&&c.content)o.content=c.content;if(!o.html&&c.html)o.html=c.html;return o;});
+  return (localArr||[]).map(function(x){var c=byId[x&&x.id];if(!c)return x;var o={};for(var k in x)o[k]=x[k];if(!o.content&&c.content)o.content=c.content;if(!o.html&&c.html)o.html=c.html;if(o.h==null&&c.h!=null)o.h=c.h;return o;});
 }
 async function syncRecDocs(){
   if(!_cloudReady||!_db)return;
@@ -1232,13 +1264,34 @@ async function syncRecDocs(){
 async function fetchRecDocs(){
   if(!_cloudReady||!_db)return;
   try{
-    var r=await _db.from("geo_store").select("*").like("id","rec:%");
-    if(r.error)return;
-    var docs=(r.data||[]).map(function(x){return x&&x.payload&&x.payload.doc;}).filter(Boolean);
-    if(!docs.length)return;
-    setTrain(fillRecFromCloud(getTrain(),docs)); // 仅补缺重字段，不覆盖本地已有完整内容
-    docs.forEach(function(d){ if(d&&d.id)_recSynced[d.id]=recDocHash(d); });
-    recSyncPersist();
+    // 1) 仅列出云端 rec 独立行的 id（返回体极小），避免一次性拉回全部范文正文
+    var lr=await _db.from("geo_store").select("id").like("id","rec:%");
+    if(lr.error)return;
+    var cloudIds=(lr.data||[]).map(function(x){return String(x.id||"").replace(/^rec:/,"");}).filter(Boolean);
+    var local=getTrain()||[], localMap={}, need={};
+    local.forEach(function(d){ if(d&&d.id)localMap[d.id]=d; });
+    // 2) 本地缺完整内容、或内容指纹与云端元数据不符 → 需要取回
+    local.forEach(function(d){
+      if(!d||!d.id)return;
+      var full=!!(d.content||d.html);
+      if(!full || (d.h!=null && d.h!==recDocHash(d))) need[d.id]=1;
+    });
+    // 3) 云端有、本地完全没有的范文（新设备首次同步）
+    cloudIds.forEach(function(id){ if(!localMap[id]) need[id]=1; });
+    var ids=Object.keys(need); if(!ids.length)return;
+    // 4) 逐篇直取（而非整包搬运），仅传输真正需要的那几篇
+    var changed=false;
+    for(var i=0;i<ids.length;i++){
+      try{
+        var rr=await _db.from("geo_store").select("*").eq("id",recCloudId(ids[i])).maybeSingle();
+        if(rr.error||!rr.data||!rr.data.payload||!rr.data.payload.doc)continue;
+        var doc=rr.data.payload.doc;
+        setTrain(fillRecFromCloud(getTrain(),[doc])); // 仅补缺重字段，不覆盖本地已有完整内容
+        _recSynced[doc.id]=recDocHash(doc);
+        changed=true;
+      }catch(e){ console.warn("fetchRecDocs single failed",e); }
+    }
+    if(changed)recSyncPersist();
   }catch(e){ console.warn("fetchRecDocs failed",e); }
 }
 function getKB(){return _kbMem;}
