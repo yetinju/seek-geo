@@ -176,6 +176,9 @@ input[type=file]::file-selector-button{margin-right:10px;padding:7px 13px;border
 .pg:hover:not(:disabled){border-color:var(--brand);color:var(--brand-ink);transform:translateY(-1px)}
 .pg:active:not(:disabled){transform:translateY(0)}
 .pg:disabled{opacity:.45;cursor:not-allowed}
+.pg-cur{background:var(--brand);border-color:var(--brand);color:#fff;cursor:default}
+.pg-cur:hover{transform:none;color:#fff;border-color:var(--brand)}
+.pg-ell{padding:0 2px;color:var(--sub);font-size:13px;align-self:center;user-select:none}
 
 /* ===================== 弹窗 ===================== */
 .mask{position:fixed;inset:0;background:rgba(15,23,42,.45);z-index:50;display:none;align-items:flex-end;justify-content:center;backdrop-filter:blur(2px)}
@@ -682,9 +685,28 @@ function libCatColor(c){if(c==="实测/评测报告")return "#0891b2";if(c==="�
 function pagerHTML(total,page,size){
   var pages=Math.max(1,Math.ceil(total/size));
   if(pages<=1)return "";
-  var prev=page>1?'<button class="pg" data-pg="prev">‹ 上一页</button>':'<button class="pg" disabled>‹ 上一页</button>';
-  var next=page<pages?'<button class="pg" data-pg="next">下一页 ›</button>':'<button class="pg" disabled>下一页 ›</button>';
-  return '<div class="pager"><span class="pg-info">第 '+page+' / '+pages+' 页 · 共 '+total+' 条</span>'+prev+next+'</div>';
+  var prev=page>1?'<button class="pg" data-pg="prev" title="上一页">‹</button>':'<button class="pg" disabled title="上一页">‹</button>';
+  var next=page<pages?'<button class="pg" data-pg="next" title="下一页">›</button>':'<button class="pg" disabled title="下一页">›</button>';
+  function btn(n){return n===page?'<button class="pg pg-cur" data-pg="'+n+'">'+n+'</button>':'<button class="pg" data-pg="'+n+'">'+n+'</button>';}
+  var nums=[],win=2,start=Math.max(1,page-win),end=Math.min(pages,page+win);
+  if(start>1)nums.push(btn(1));
+  if(start>2)nums.push('<span class="pg-ell">…</span>');
+  for(var i=start;i<=end;i++)nums.push(btn(i));
+  if(end<pages-1)nums.push('<span class="pg-ell">…</span>');
+  if(end<pages)nums.push(btn(pages));
+  return '<div class="pager"><span class="pg-info">共 '+total+' 条 · 第 '+page+' / '+pages+' 页</span>'+prev+nums.join("")+next+'</div>';
+}
+function bindPager(box,pageVar,renderFn){
+  $all(".pg",box).forEach(function(b){
+    if(b.disabled)return;
+    b.addEventListener("click",function(){
+      var pg=b.getAttribute("data-pg"),cur=window[pageVar];
+      if(pg==="prev")window[pageVar]=cur-1;
+      else if(pg==="next")window[pageVar]=cur+1;
+      else{var n=parseInt(pg,10);if(n>=1)window[pageVar]=n;}
+      renderFn();
+    });
+  });
 }
 
 var SYS_PROMPT = "你是一位精通 GEO（生成式引擎优化，Generative Engine Optimization）的内容专家。GEO 的目标是让文章更容易被 ChatGPT、Perplexity、豆包、文心、通义、Kimi、Claude、Gemini 等 AI 搜索引擎在回答用户问题时引用和推荐。\n\n请严格遵循：\n1. 直接、明确地回答用户最可能搜索的问题，开头给出核心结论。\n2. 使用清晰结构：小标题、分点列表、FAQ 段落，便于 AI 抽取与引用。\n3. 体现 E-E-A-T（经验、专业、权威、可信），适当给出可验证的数据、方法或来源。\n4. 自然融入品牌/产品信息，避免生硬广告，提供真实价值。\n5. 包含可被直接引用的关键句与要点，语言准确具体。\n6. 信息密度高、自然流畅。\n\n只输出文章正文本身，不要输出任何解释性说明或前缀。";
@@ -1171,9 +1193,7 @@ function renderEnt(){
       fillEntSelect();renderEnt();toast("已删除");
     });
   });
-  var pv=$(".pg[data-pg=prev]",box),nx=$(".pg[data-pg=next]",box);
-  if(pv)pv.addEventListener("click",function(){entPage--;renderEnt();});
-  if(nx)nx.addEventListener("click",function(){entPage++;renderEnt();});
+  bindPager(box,"entPage",renderEnt);
 }
 function entFields(){
   return {
@@ -1364,9 +1384,7 @@ function renderLib(){
     '</div>';
   }).join("")+pagerHTML(total,libPage,PAGE_SIZE);
   bindItemActions(box);
-  var pv=$(".pg[data-pg=prev]",box),nx=$(".pg[data-pg=next]",box);
-  if(pv)pv.addEventListener("click",function(){libPage--;renderLib();});
-  if(nx)nx.addEventListener("click",function(){libPage++;renderLib();});
+  bindPager(box,"libPage",renderLib);
 }
 
 function bindItemActions(box){
@@ -1894,9 +1912,7 @@ function renderKb(){
     if(v)v.addEventListener("click",function(){viewKb(id);});
     if(d)d.addEventListener("click",function(){delKb(id);});
   });
-  var pv=$(".pg[data-pg=prev]",box),nx=$(".pg[data-pg=next]",box);
-  if(pv)pv.addEventListener("click",function(){kbPage--;renderKb();});
-  if(nx)nx.addEventListener("click",function(){kbPage++;renderKb();});
+  bindPager(box,"kbPage",renderKb);
 }
 function viewKb(id){
   var r=getKB().filter(function(x){return x.id===id;})[0];if(!r)return;
@@ -1994,9 +2010,7 @@ function renderTrain(){
     if(cb)cb.addEventListener("change",function(){trainSel[id]=cb.checked;el.classList.toggle("sel",cb.checked);updateTrainSelBar();});
     if(d)d.addEventListener("click",function(){delTrain(id);});
   });
-  var pv=$(".pg[data-pg=prev]",box),nx=$(".pg[data-pg=next]",box);
-  if(pv)pv.addEventListener("click",function(){trainPage--;renderTrain();});
-  if(nx)nx.addEventListener("click",function(){trainPage++;renderTrain();});
+  bindPager(box,"trainPage",renderTrain);
   updateTrainSelBar();
   renderTrainCats();
 }
@@ -2162,9 +2176,7 @@ function renderSpecs(){
     if(u)u.addEventListener("click",function(){setActiveSpecId(id);renderSpecs();toast("已设为当前使用规范");});
     if(d)d.addEventListener("click",function(){delSpec(id);});
   });
-  var pv=$(".pg[data-pg=prev]",box),nx=$(".pg[data-pg=next]",box);
-  if(pv)pv.addEventListener("click",function(){specPage--;renderSpecs();});
-  if(nx)nx.addEventListener("click",function(){specPage++;renderSpecs();});
+  bindPager(box,"specPage",renderSpecs);
 }
 function viewSpec(id){
   var r=getSpecs().filter(function(x){return x.id===id;})[0];if(!r)return;
