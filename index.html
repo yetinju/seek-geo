@@ -756,10 +756,13 @@ async function kbInit(){
 
 /* ============ 云同步（Supabase PostgreSQL · 免费层） ============ */
 /* 在 Supabase 控制台 Project Settings → API 复制 Project URL 与 anon public key 替换下面两项。
-   数据表需先在建表 SQL 中创建（见交付的 supabase_setup.sql）。 */
+   数据表需先在建表 SQL 中创建（见交付的 supabase_multi_table.sql：geo_records/geo_train/geo_ents/geo_specs/geo_kb/geo_cfg/geo_tomb 七张表）。 */
 var SUPABASE_URL="https://geo-proxy-drx.pages.dev"; // 经 Cloudflare Pages 反代 supabase.co，解决大陆直连 supabase.co 被干扰导致“一直连接云端”
 var SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNvamVtZnVhdGVpeHJvdnp2dmN3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc1MjgyMTMsImV4cCI6MjEwMzEwNDIxM30.t1WkrqQcCi6TDs-jVE0k_TrHo43XsnxWfvo9rtNSh7M";
-var _db=null,_cloudReady=false,_suppressSave=false,_saveTimer=null,_lastSyncAt=null,_initRetryTimer=null,_lastHash=null,_bc=null,_pollTimer=null,_keepAliveTimer=null,_syncing=false,_cloudTomb={},_cloudLastErr="",_cloudStopped=false,_kbSynced=lsGet("kbsync",{}),_kbRev=0,_lastKbRev=0,_recSynced=lsGet("recsync",{}),_recRev=0,_lastRecRev=0;
+var _db=null,_cloudReady=false,_suppressSave=false,_saveTimer=null,_lastCfgTs=null,_initRetryTimer=null,_bc=null,_pollTimer=null,_keepAliveTimer=null,_syncing=false,_cloudTomb={},_cloudLastErr="",_cloudStopped=false,_kbSynced=lsGet("kbsync",{}),_recSynced=lsGet("recsync",{});
+/* 多表存储：每个模块对应一张表，行 id = 模块内条目 id（知识库/文章训练等大内容每篇一个独立行），彻底隔离、可按模块独立同步。
+   配置与墓碑为单例行（id="default"）。旧版单表 geo_store 的数据由 migrateFromLegacy 在首次同步时从本机当前状态幂等迁移，不破坏现有数据。 */
+var TBL={records:"geo_records",train:"geo_train",ents:"geo_ents",specs:"geo_specs",kb:"geo_kb",cfg:"geo_cfg",tomb:"geo_tomb"};
 /* 合并本地与云端数组：按 id 取并集，本地独有保留、云端独有/同 id 覆盖；无 id 的项按内容去重。绝不丢失任一方数据。 */
 function mergeArr(a,b){
   a=Array.isArray(a)?a:[];b=Array.isArray(b)?b:[];
@@ -791,7 +794,7 @@ function mergeArrTomb(localArr,cloudArr,tomb){
   return Object.keys(out).map(function(k){return out[k];});
 }
 /* 墓碑（tombstone）：删除时记录 id，随同步传播，所有端按标记过滤，使"删除"也能跨端生效。
-   关键修复：墓碑独立成云端行（tombstore），与文档主行（default）分离。
+   墓碑独立成单例行（geo_tomb，id="default"），与文档集合表（geo_kb/geo_train/...）完全分离。
    原因：旧实现墓碑放在主 payload 里，而他端若在主行 upsert 时读到的是"旧墓碑"（删除尚未同步到云端），
    其整行覆盖会把墓碑清空并重新写回已删文档，导致"删好几次才真正删除"。
    现在墓碑写在独立行，文档 upsert 永不触碰它；任一端删除后墓碑跨端持久化，一次删除即永久生效。 */
@@ -802,13 +805,13 @@ function addTomb(id){if(!id)return;var t=getTomb()||{};t[id]=Date.now();setTombL
 function purgeTomb(ids){if(!ids||!ids.length)return;var t=getTomb()||{},ch=false;ids.forEach(function(i){if(t[i]){delete t[i];ch=true;}});if(ch){setTombLocal(t);pushTomb();}}
 async function pushTomb(){
   if(!_cloudReady||!_db)return;
-  try{ await _db.from("geo_store").upsert({id:"tombstore",payload:{ids:getTomb()},updated_at:new Date().toISOString()}); }
+  try{ await _db.from(TBL.tomb).upsert({id:"default",payload:{ids:getTomb()},updated_at:new Date().toISOString()}); }
   catch(e){ console.warn("pushTomb failed",e); }
 }
 async function pullTomb(){
   if(!_cloudReady||!_db)return _cloudTomb;
   try{
-    var r=await _db.from("geo_store").select("*").eq("id","tombstore").maybeSingle();
+    var r=await _db.from(TBL.tomb).select("*").eq("id","default").maybeSingle();
     if(r&&r.data&&r.data.payload&&r.data.payload.ids){
       _cloudTomb=r.data.payload.ids;
       setTombLocal(Object.assign({},_cloudTomb,lsGet("tomb",{})));
@@ -840,158 +843,118 @@ function startRealtime(){
 function signalLocalChange(){try{localStorage.setItem(K+"_rt_"+Date.now(),"1");localStorage.removeItem(K+"_rt_"+Date.now());}catch(e){}}
 /* 按 id 稳定排序，使多端生成的 payload 字节一致，是"无变化则跳过回写"防乒乓写的前提 */
 function sortById(a){return (Array.isArray(a)?a:[]).slice().sort(function(x,y){return (x&&x.id||"").localeCompare(y&&y.id||"");});}
-/* 合并出一份"应当写入云端"的 payload（不含 savedAt），syncToCloud 与 pull 内容比对共用 */
-function buildPayload(cur){
-  var tomb=mergeTomb(getTomb(),cur&&cur.tomb);setTomb(tomb);
-  return {
-    records:sortById(mergeArrTomb(cur&&cur.records,getTrain().map(recMeta),tomb)),
-    ent:sortById(mergeArrTomb(cur&&cur.ent,getEnts(),tomb)),
-    kb:sortById(mergeArrTomb(cur&&cur.kb,getKB().map(kbMeta),tomb)),
-    train:sortById(mergeArrTomb(cur&&cur.train,getTrain(),tomb)),
-    train_spec:Object.assign({},cur&&cur.train_spec||{},getTrainSpec()||{}),
-    specs:sortById(mergeArrTomb(cur&&cur.specs,getSpecs(),tomb)),
-    spec_active:getActiveSpecId(),
-    tomb:tomb,
-    kbRev:_kbRev,
-    recRev:_recRev,
-    cfg:getCfg(),
-    seeded:lsGet("seeded",false)
-  };
+/* ---- 多表同步核心：每个模块一张表，行=条目，配置/墓碑为单例行 ---- */
+function cfgPayload(){return {cfg:getCfg(),spec_active:getActiveSpecId(),seeded:lsGet("seeded",false),migrated:true};}
+async function upsertRow(table,id,payload){return _db.from(table).upsert({id:id,payload:payload,updated_at:new Date().toISOString()});}
+async function deleteRow(table,id){return _db.from(table).delete().eq("id",id);}
+async function pushCollRows(table,rows){for(var i=0;i<rows.length;i++){if(rows[i]&&rows[i].id)await upsertRow(table,rows[i].id,rows[i].payload);}}
+/* 首次同步时从本机当前状态幂等迁移到新表（不读旧 geo_store，杜绝旧 payload 把 records 误当作 train 元数据的串味问题）。
+   旧 geo_store 表保留不删，可随时在 Supabase 控制台手动 DROP。 */
+async function migrateFromLegacy(){
+  try{
+    var c=await _db.from(TBL.cfg).select("id").eq("id","default").maybeSingle();
+    if(c&&c.data)return; // 新表已初始化（含 migrated 标记），跳过迁移，保证幂等
+  }catch(e){ return; }   // 表尚不存在（用户未执行建表 SQL）则跳过，进入离线模式
+  try{
+    await pushCollRows(TBL.records,getRecords().map(function(x){return {id:x.id,payload:x};}));
+    await pushCollRows(TBL.train,getTrain().map(function(x){return {id:x.id,payload:x};}));
+    await pushCollRows(TBL.ents,getEnts().map(function(x){return {id:x.id,payload:x};}));
+    await pushCollRows(TBL.specs,getSpecs().map(function(x){return {id:x.id,payload:x};}));
+    // 知识库本地可能仅有轻量元数据（stripKbHeavy 镜像），先用旧 geo_store 的 kb:<id> 行补全正文再写入 geo_kb
+    var kbLocal=getKB()||[];
+    try{
+      var kr=await _db.from("geo_store").select("*").like("id","kb:%");
+      (kr.data||[]).forEach(function(x){
+        var id=String(x.id||"").replace(/^kb:/,"");
+        if(x.payload&&x.payload.doc){
+          var m=null;kbLocal.forEach(function(d){if(d.id===id)m=d;});
+          if(m){var o={};for(var k in m)o[k]=m[k];if(!o.html&&x.payload.doc.html)o.html=x.payload.doc.html;if(!o.text&&x.payload.doc.text)o.text=x.payload.doc.text;if(!o.data&&x.payload.doc.data)o.data=x.payload.doc.data;kbLocal=kbLocal.map(function(d){return d.id===id?o:d;});}
+        }
+      });
+    }catch(e){}
+    await pushCollRows(TBL.kb,kbLocal.map(function(x){return {id:x.id,payload:x};}));
+    await _db.from(TBL.cfg).upsert({id:"default",payload:cfgPayload(),updated_at:new Date().toISOString()});
+    await _db.from(TBL.tomb).upsert({id:"default",payload:{ids:getTomb()},updated_at:new Date().toISOString()});
+    console.log("migrateFromLegacy: 已用本机数据初始化新表");
+  }catch(e){ console.warn("migrateFromLegacy 失败",e); }
 }
-/* payload 的内容指纹（忽略 savedAt 时间戳），用于判断云端"内容"是否变化，比 updated_at 更可靠（不受同毫秒写入影响） */
-function payloadHash(p){if(!p)return "";var c=Object.assign({},p);delete c.savedAt;return JSON.stringify(c);}
+/* 通用集合同步：读云端→与本地墓碑感知并集→写回差异行→删除已移除行。返回是否有变更（用于是否顶全局信号）。 */
+async function syncColl(table,getLocal,setter){
+  if(!_cloudReady||!_db)return false;
+  var local=getLocal()||[],localIds={};local.forEach(function(x){if(x&&x.id)localIds[x.id]=1;});
+  var r=await _db.from(table).select("*");if(r.error)return false;
+  var cloud=r.data||[],cloudById={};cloud.forEach(function(x){if(x&&x.id)cloudById[x.id]=x;});
+  var tomb=getTomb();
+  var merged=mergeArrTomb(local,cloud.map(function(x){return x.payload;}),tomb);
+  var changed=false;
+  for(var i=0;i<merged.length;i++){
+    var it=merged[i];if(!it||!it.id)continue;
+    var cp=cloudById[it.id]?cloudById[it.id].payload:null;
+    if(!cp||JSON.stringify(cp)!==JSON.stringify(it)){try{await upsertRow(table,it.id,it);changed=true;}catch(e){}}
+  }
+  cloud.forEach(function(x){if(x&&x.id&&!localIds[x.id]&&!tomb[x.id]){try{deleteRow(table,x.id);changed=true;}catch(e){}}});
+  if(changed)setter(merged);
+  return changed;
+}
+/* 拉取集合并入本地（墓碑感知并集） */
+async function applyColl(table,getter,setter){
+  if(!_cloudReady||!_db)return;
+  var r=await _db.from(table).select("*");if(r.error)return;
+  var arr=(r.data||[]).map(function(x){return x.payload;}).filter(Boolean);
+  setter(mergeArrTomb(getter(),arr,getTomb()));
+}
+/* 多表同步：每个模块独立推送到对应表；配置/墓碑为单例行，并作为"全局变更信号"（geo_cfg.updated_at）。
+   各集合均与云端做墓碑感知并集，绝不互相覆盖，无变化则不写、不闪状态。 */
 async function syncToCloud(opts){
   opts=opts||{};
   if(!_cloudReady||_syncing)return;
   _syncing=true;
   try{
-    // 先静默读云端并比对；如果和云端完全一致，直接跳过，绝不闪烁状态
-    var cur=null,curUpdatedAt=null;
-    try{
-        var cr=await _db.from("geo_store").select("*").eq("id","default").maybeSingle();
-      if(cr.error)throw cr.error; // 会话失效/网络错误 → 交给 markCloudDead，绝不用本地覆盖云端
-      if(cr.data&&cr.data.payload){cur=cr.data.payload;curUpdatedAt=cr.data.updated_at;}
-    }catch(e){ _cloudReady=false; markCloudDead("sync read failed: "+(e&&e.message||e)); return; }
-    await syncKbDocs(); // 先把知识库各文档同步到独立行（可能更新 kbRev），再构建主行 payload
-    await syncRecDocs(); // 再把文章训练范文各篇同步到独立行（可能更新 recRev），主行仅存轻量元数据
-    var payload=buildPayload(cur);
-    // 与云端逐字段一致则跳过回写，避免多端互相触发写导致"乒乓写/无限轮询"
-    if(cur && payloadHash(cur)===payloadHash(payload)){
-      _lastSyncAt=curUpdatedAt||new Date().toISOString();
-      _lastHash=payloadHash(payload);
-      if(!opts.silent)setSync("实时同步 ☁","#a7f3d0");
-      return;
-    }
-    // 确实需要写入云端，才显示"同步中…"动画
+    await pullTomb(); // 先拉墓碑，确保删除跨端生效
     if(!opts.silent)setSync("同步中…","#fbbf24");
-    var ts=new Date().toISOString();
-    payload.savedAt=ts;
-    var r=await _db.from("geo_store").upsert({id:"default",payload:payload,updated_at:ts});
-    if(r.error)throw r.error;
-    await pushTomb(); // 墓碑独立行同步，确保删除跨端持久化、不被文档 upsert 覆盖
-    _lastSyncAt=ts;_lastHash=payloadHash(payload);
-    // 关键：刚写入的是"本地 ∪ 云端"的合并结果，但本地内存/存储可能仍缺少云端独有项（例如并发编辑时本端先推再拉）。
-    // 这里把合并后的 payload 反写回本地，使本地状态与云端完全一致，避免"sync 后本地落后云端、下一轮 pull 因 hash 相同而跳过"的信息丢失。
-    var lc=applyCloud(payload, ts);
-    if(lc)refreshAll();
-    broadcastChange(_lastHash);signalLocalChange();
-    setSync("实时同步 ☁","#a7f3d0");
+    var changed=false;
+    changed=(await syncColl(TBL.records,getRecords,setRecords))||changed; // 软文库
+    changed=(await syncColl(TBL.ents,getEnts,setEnts))||changed;           // 企业画像
+    changed=(await syncColl(TBL.specs,getSpecs,setSpecs))||changed;       // 风格规范
+    changed=(await syncKbToCloud())||changed;                             // 知识库（每篇独立行，含完整正文）
+    changed=(await syncTrainToCloud())||changed;                         // 文章训练范文（每篇独立行，含完整正文）
+    // 配置/当前规范：内容变化才写；只要任一集合变了，就顶一次全局信号（geo_cfg.updated_at），驱动其它端拉取
+    var c=await _db.from(TBL.cfg).select("payload").eq("id","default").maybeSingle();
+    var cp=c&&c.data&&c.data.payload, localCfg=cfgPayload();
+    if(!cp||JSON.stringify(cp)!==JSON.stringify(localCfg)){ await _db.from(TBL.cfg).upsert({id:"default",payload:localCfg,updated_at:new Date().toISOString()}); changed=true; }
+    else if(changed){ await _db.from(TBL.cfg).upsert({id:"default",payload:localCfg,updated_at:new Date().toISOString()}); }
+    if(changed)await pushTomb();
+    if(!opts.silent||changed)setSync("实时同步 ☁","#a7f3d0");
+    broadcastChange(_lastCfgTs);signalLocalChange();
   }catch(e){
     if(!opts.silent)setSync("同步失败","#fca5a5");
     console.error("syncToCloud",e);
   }
   finally{_syncing=false;}
 }
-/* 将云端 payload 合并进本地（墓碑感知并集）。返回本地是否发生变化（用于决定是否刷新界面）。
-   这是 pullLoop 与 loadFromCloud 共用的合并核心，避免重复代码并支持"有变化才回写"。 */
-function applyCloud(p, updatedAt){
-  if(!p)return false;
-  var localTomb=lsGet("tomb",{});                     // 本设备自身墓碑（合并前）
-  var cloudTomb=Object.assign({},_cloudTomb,p.tomb);  // 云端墓碑（独立 tombstore 行 + 主 payload）
-  // 墓碑权威且跨端持久化：任一端删除后墓碑写入独立 tombstore 行，不会被他端文档 upsert 整行覆盖而复活，一次删除即永久生效。
-  // 仅清理"本设备本地陈旧墓碑"：该 id 本地有墓碑、但云端(已同步的删除)并无此墓碑，且云端该文档仍存活 →
-  // 说明是"未同步到云端的本地删除"留下的陈旧标记，应自愈显示云端存活文档。
-  // 已同步到云端的删除（云端墓碑存在）绝不自动清除，否则多设备下他端把已删文档写回云端时会把删除复活，导致"删好几次"。
-  var tomb=mergeTomb(getTomb(),p.tomb);
-  ["records","ent","kb","train","specs"].forEach(function(key){
-    if(!Array.isArray(p[key]))return;
-    p[key].forEach(function(x){
-      // 仅清理"本设备本地陈旧墓碑"：本地有墓碑、云端(已同步删除)无此墓碑、且云端文档自身 updated_at 晚于墓碑
-      // → 说明这是"未同步到云端的本地删除"留下的陈旧标记，且云端文档是在删除之后才存在的，应自愈显示。
-      // 已同步到云端的删除（云端墓碑存在）绝不清除；刚设置的墓碑(tomb 时间戳≥文档 updated_at)也不清除，
-      // 否则多设备删除竞态下他端把已删文档写回云端时会把删除复活，导致"删好几次"。
-      if(x&&x.id&&tomb[x.id]!=null && localTomb[x.id]!=null && cloudTomb[x.id]==null){
-        var docTs=(x.updated_at!=null)?Number(x.updated_at):NaN, tombTs=Number(tomb[x.id]);
-        if(!isNaN(docTs) && docTs>tombTs) delete tomb[x.id];
-      }
-    });
-  });
-  setTomb(tomb);
-  var localChanged=false;
-  function sig(arr){var m={};(arr||[]).forEach(function(x){if(x&&x.id)m[x.id]=JSON.stringify(x);});return m;}
-  function m(getter,setter,key){
-    if(!Array.isArray(p[key]))return;
-    var before=getter(),after=mergeArrTomb(before,p[key],tomb);
-    var bS=sig(before),aS=sig(after),ids={};
-    before.forEach(function(x){if(x&&x.id)ids[x.id]=1;});
-    after.forEach(function(x){if(x&&x.id)ids[x.id]=1;});
-    var diff=false;
-    Object.keys(ids).forEach(function(id){if(bS[id]!==aS[id])diff=true;});
-    if(diff){setter(after);localChanged=true;}
-  }
-  m(getRecords,setRecords,"records");
-  m(getEnts,setEnts,"ent");
-  // 知识库走专用合并：先按 id 并集（本地优先去重），再用云端完整 html/text/data 回填可能被剥离的重字段。
-  // 关键：刷新后 _kbMem 仅含 localStorage 的轻量元数据（无 html），若直接 mergeArrTomb 会"本地优先"丢弃云端完整内容，
-  // 导致电脑端查看时只剩 500 字预览（内容显示不全）。fillKbFromCloud 仅补缺、不覆盖本地已有重字段。
-  if(Array.isArray(p.kb)){
-    var kbBefore=getKB(), kbMerged=mergeArrTomb(kbBefore,p.kb,tomb), kbAfter=fillKbFromCloud(kbMerged,p.kb);
-    var kbBS={},kbAS={},kbIds={},kbDiff=false;
-    kbBefore.forEach(function(x){if(x&&x.id)kbBS[x.id]=JSON.stringify(x);});
-    kbAfter.forEach(function(x){if(x&&x.id)kbAS[x.id]=JSON.stringify(x);});
-    kbBefore.forEach(function(x){if(x&&x.id)kbIds[x.id]=1;});
-    kbAfter.forEach(function(x){if(x&&x.id)kbIds[x.id]=1;});
-    Object.keys(kbIds).forEach(function(id){if(kbBS[id]!==kbAS[id])kbDiff=true;});
-    if(kbDiff){setKB(kbAfter);localChanged=true;}
-  }
-  // 文章训练走专用合并：先按 id 并集（本地优先去重），再用云端元数据(含内容指纹 h)回填，使本地范文带上 h 供增量拉取比对；
-  // 仅补缺重字段、不覆盖本地已有 content/html（与知识库同一逻辑）。
-  if(Array.isArray(p.train)){
-    var trBefore=getTrain(), trMerged=mergeArrTomb(trBefore,p.train,tomb), trAfter=fillRecFromCloud(trMerged,p.train);
-    var trBS={},trAS={},trIds={},trDiff=false;
-    trBefore.forEach(function(x){if(x&&x.id)trBS[x.id]=JSON.stringify(x);});
-    trAfter.forEach(function(x){if(x&&x.id)trAS[x.id]=JSON.stringify(x);});
-    trBefore.forEach(function(x){if(x&&x.id)trIds[x.id]=1;});
-    trAfter.forEach(function(x){if(x&&x.id)trIds[x.id]=1;});
-    Object.keys(trIds).forEach(function(id){if(trBS[id]!==trAS[id])trDiff=true;});
-    if(trDiff){setTrain(trAfter);localChanged=true;}
-  }
-  if(p.train_spec!==undefined)setTrainSpec(p.train_spec);
-  m(getSpecs,setSpecs,"specs");
-  if(p.spec_active!==undefined)setActiveSpecId(p.spec_active);
-  if(p.cfg)setCfg(p.cfg);
-  if(p.seeded)lsSet("seeded",true);
-  return localChanged;
-}
+/* 注：云端→本地的合并已拆分为按集合的独立函数（syncColl / applyColl / fetchKbToLocal / fetchTrainToLocal），
+   各自做墓碑感知并集，不再需要单一的 applyCloud 主 payload 合并。 */
+/* 首次连接：幂等迁移旧表 → 拉墓碑/配置 → 逐集合合并入本地。各集合按需回填（知识与文章训练仅取回缺失/变更篇）。 */
 async function loadFromCloud(){
   _suppressSave=true;
   try{
-    var r=await _db.from("geo_store").select("*").eq("id","default").maybeSingle();
-    if(r.error)throw r.error;
-    if(r.data&&r.data.payload){
-      await pullTomb();
-      applyCloud(r.data.payload, r.data.updated_at);
-      await fetchKbDocs(); // 从独立行回填知识库完整内容（主行仅存轻量元数据）
-      await fetchRecDocs(); // 从独立行回填文章训练范文完整内容（主行仅存轻量元数据）
-      if(r.data.updated_at)_lastSyncAt=r.data.updated_at;
-      _lastHash=payloadHash(r.data.payload);
-      _lastKbRev=r.data.payload.kbRev||0;
-      _lastRecRev=r.data.payload.recRev||0;
+    await migrateFromLegacy();      // 首次同步用本机状态初始化新表（幂等、不破坏旧数据）
+    await pullTomb();
+    var c=await _db.from(TBL.cfg).select("*").eq("id","default").maybeSingle();
+    if(c.error)throw c.error;
+    if(c.data&&c.data.payload){
+      var cp=c.data.payload;
+      if(cp.cfg)setCfg(cp.cfg);
+      if(cp.spec_active!==undefined)setActiveSpecId(cp.spec_active);
+      if(cp.seeded)lsSet("seeded",true);
+      _lastCfgTs=c.data.updated_at;
+      await applyColl(TBL.records,getRecords,setRecords);
+      await applyColl(TBL.ents,getEnts,setEnts);
+      await applyColl(TBL.specs,getSpecs,setSpecs);
+      await fetchKbToLocal();            // 知识库每篇独立行，按需回填完整正文
+      await fetchTrainToLocal();         // 文章训练每篇独立行，按需回填完整正文
       _suppressSave=false;
-      // 注意：此处不再调用 syncToCloud 自愈回写——它会对同一 default 行再次发请求，
-      // 与上面的主读取、pullTomb 形成“连续第 3 次同 URL 大响应请求”，在 Cloudflare 代理上易触发 body 卡死。
-      // 数据已通过 applyCloud 装入内存，初次加载无需把刚读到的数据再写回云端。
-      refreshAll(); // 关键：装入云端数据后立即重渲染，避免"首次连不上→恢复后内存有数据却界面不刷新"导致手机看不到已同步文档
+      refreshAll(); // 装入云端数据后立即重渲染，避免"首次连不上→恢复后内存有数据却界面不刷新"
       return true;
     }
     return false;
@@ -1004,7 +967,7 @@ function cloudErrHint(e){
   if(/paused|is paused|project .* (paused|disabled)|Project is not active|not active/i.test(s))
     return "云端项目已暂停（Supabase 免费项目闲置会自动暂停），请在 Supabase 控制台点 Resume，并保持每周打开一次本页面自动保活";
   if(/does not exist|relation .* does not exist|42P01/i.test(s))
-    return "数据表 geo_store 不存在，请先在 Supabase SQL Editor 执行建表语句";
+    return "数据表不存在（需在 Supabase SQL Editor 执行 supabase_multi_table.sql 建表：geo_records/geo_train/geo_ents/geo_specs/geo_kb/geo_cfg/geo_tomb）";
   if(/invalid apikey|apikey|JWT|role .* not|permission|unauthorized|401|403/i.test(s))
     return "Supabase 凭证无效，请检查 SUPABASE_URL / SUPABASE_ANON_KEY 是否正确";
   if(/res_stopped|套餐过期|欠费|资源用尽|资源已停止|ResourceExhausted/i.test(s))
@@ -1051,7 +1014,7 @@ async function initCloud(){
     _pollTimer=setInterval(pullLoop,30000);
     // 保活：Supabase 免费项目闲置约 7 天会自动暂停；页面打开期间每 6 小时轻量探测一次，配合"每周至少打开一次页面"避免暂停
     if(_keepAliveTimer)clearInterval(_keepAliveTimer);
-    _keepAliveTimer=setInterval(function(){ if(_cloudReady&&_db){ _db.from("geo_store").select("updated_at").eq("id","default").maybeSingle().catch(function(){}); } },6*3600*1000);
+    _keepAliveTimer=setInterval(function(){ if(_cloudReady&&_db){ _db.from(TBL.cfg).select("updated_at").eq("id","default").maybeSingle().catch(function(){}); } },6*3600*1000);
     // 建立实时通道：同浏览器跨标签页通过 BroadcastChannel / storage 事件即时同步
     startRealtime();
     // 手机端后台标签页会被系统暂停/降频 setInterval；切回前台时立即拉取一次
@@ -1085,24 +1048,26 @@ async function pullLoop(){
   if(!_cloudReady||_syncing)return;
   _syncing=true;
   try{
-    // 轻量探测：只取 updated_at，避免每轮都拉回整个 payload（文章/知识库全量），显著降低云端读调用与带宽
-    var head=await _db.from("geo_store").select("updated_at").eq("id","default").maybeSingle();
+    // 轻量探测：只查 geo_cfg 的 updated_at（全局变更信号），内容未变则跳过整包拉取，显著降低读调用与带宽
+    var head=await _db.from(TBL.cfg).select("updated_at").eq("id","default").maybeSingle();
     if(head.error){ _cloudReady=false; markCloudDead("pull error: "+(head.error&&head.error.message||head.error)); return; }
-    if(!head.data){ _lastSyncAt=null; return; } // 云端尚无主行
-    if(_lastSyncAt && head.data.updated_at===_lastSyncAt) return; // 内容未变，跳过整包拉取
-    // 确有变更，才拉取完整 payload 并合并
-    var r=await _db.from("geo_store").select("*").eq("id","default").maybeSingle();
-    if(r.error){ _cloudReady=false; markCloudDead("pull error: "+(r.error&&r.error.message||r.error)); return; }
-    if(!r.data)return;
-    var p=r.data.payload; if(!p)return;
-    if(r.data.updated_at)_lastSyncAt=r.data.updated_at; // 先锚定时间戳，避免「时间戳变而内容同」时下一轮重复拉全量
-    if(payloadHash(p)===_lastHash)return; // 云端内容无变化，跳过（不依赖时间戳，避免同毫秒写入误判）
+    if(!head.data){ _lastCfgTs=null; return; } // 云端尚无配置行
+    if(_lastCfgTs && head.data.updated_at===_lastCfgTs) return; // 内容未变，跳过
+    _lastCfgTs=head.data.updated_at; // 先锚定时间戳，避免「时间戳变而内容同」时下一轮重复拉取
     await pullTomb();
-    var localChanged=applyCloud(p, r.data.updated_at);
-    if(p.kbRev&&p.kbRev!==_lastKbRev){ await fetchKbDocs(); _lastKbRev=p.kbRev; } // 知识库独立行有变更，按需回填完整内容
-    if(p.recRev&&p.recRev!==_lastRecRev){ await fetchRecDocs(); _lastRecRev=p.recRev; } // 文章训练独立行有变更，按需回填完整内容
-    _lastHash=payloadHash(p);
-    if(localChanged)refreshAll();
+    var c2=await _db.from(TBL.cfg).select("payload").eq("id","default").maybeSingle();
+    if(c2&&c2.data&&c2.data.payload){
+      if(c2.data.payload.cfg)setCfg(c2.data.payload.cfg);
+      if(c2.data.payload.spec_active!==undefined)setActiveSpecId(c2.data.payload.spec_active);
+      if(c2.data.payload.seeded)lsSet("seeded",true);
+    }
+    // 逐集合合并入本地（墓碑感知并集）；知识与文章训练仅按需回填缺失/变更篇
+    await applyColl(TBL.records,getRecords,setRecords);
+    await applyColl(TBL.ents,getEnts,setEnts);
+    await applyColl(TBL.specs,getSpecs,setSpecs);
+    await fetchKbToLocal();
+    await fetchTrainToLocal();
+    refreshAll();
     await syncToCloud({silent:true}); // 后台静默自愈回写（与云端一致时自动跳过，不会乒乓写）
     setSync("实时同步 ☁","#a7f3d0");
   }catch(e){console.error("pullLoop",e);}
@@ -1114,14 +1079,7 @@ async function forceSync(){
   if(!_cloudReady){toast(_cloudLastErr||"云端未连接，仅本地可用");return;}
   setSync("同步中…","#fbbf24");
   try{
-    var r=await _db.from("geo_store").select("*").eq("id","default").maybeSingle();
-    if(r&&r.data&&r.data.payload){
-      await pullTomb();
-      var localChanged=applyCloud(r.data.payload, r.data.updated_at);
-      if(r.data.updated_at)_lastSyncAt=r.data.updated_at;
-      _lastHash=payloadHash(r.data.payload);
-      if(localChanged)refreshAll();
-    }
+    await loadFromCloud();
     await syncToCloud();
     setSync("实时同步 ☁","#a7f3d0");toast("已与云端同步");
   }catch(e){setSync("同步失败","#fca5a5");toast("同步失败，请重试");}
@@ -1167,45 +1125,40 @@ function fillKbFromCloud(localArr,cloudArr){ // 用 cloud/import 源的完整 ht
   var byId={};cloudArr.forEach(function(x){if(x&&x.id)byId[x.id]=x;});
   return (localArr||[]).map(function(x){var c=byId[x&&x.id];if(!c)return x;var o={};for(var k in x)o[k]=x[k];if(!o.html&&c.html)o.html=c.html;if(!o.text&&c.text)o.text=c.text;if(!o.data&&c.data)o.data=c.data;if(o.h==null&&c.h!=null)o.h=c.h;return o;});
 }
-/* 知识库大文件拆分为云端独立行（geo_store.id="kb:<docId>"），主行 default 仅存轻量元数据，
-   解决「整行几 MB 过 Cloudflare 反代被 body 卡死 → 一直连接云端」的问题；多设备完整内容仍由独立行按需回填。 */
-function kbMeta(d){ if(!d)return d; return {id:d.id,name:d.name,type:d.type||"",size:d.size||0,uploadedAt:d.uploadedAt||"",category:d.category||"",kind:d.kind||"",preview:(d.text||"").slice(0,500),h:kbDocHash(d)}; }
-function kbCloudId(id){ return "kb:"+id; }
+/* 知识库：每篇文档存为 geo_kb 的一个独立行（id=docId，payload=完整文档），彻底脱离单表主体，互不拖累。 */
 function kbSyncPersist(){try{localStorage.setItem(K+"kbsync",JSON.stringify(_kbSynced));}catch(e){}} // 持久化知识库逐文档同步指纹，避免每次刷新重复全量推送
 function _h(s){ var h=5381; s=String(s==null?"":s); for(var i=0;i<s.length;i++){ h=((h<<5)+h+s.charCodeAt(i))>>>0; } return h; }
 function kbDocHash(d){ return _h((d&&d.html||"")+"\u0001"+(d&&d.text||"")+"\u0001"+(typeof (d&&d.data)==="string"?d.data:JSON.stringify(d&&d.data||""))); }
-async function syncKbDocs(){
-  if(!_cloudReady||!_db)return;
-  var local=getKB()||[], localIds={};
-  local.forEach(function(d){ if(d&&d.id)localIds[d.id]=1; });
+/* 推送知识库：逐篇比对指纹，仅 upsert 改动过的文档；本地已删除的文档同步删除其独立行。 */
+async function syncKbToCloud(){
+  if(!_cloudReady||!_db)return false;
+  var local=getKB()||[],localIds={};local.forEach(function(d){if(d&&d.id)localIds[d.id]=1;});
   var changed=false;
   for(var i=0;i<local.length;i++){
-    var d=local[i]; if(!d||!d.id)continue;
+    var d=local[i];if(!d||!d.id)continue;
     var h=kbDocHash(d);
     if(_kbSynced[d.id]!==h){
-      try{ await _db.from("geo_store").upsert({id:kbCloudId(d.id),payload:{doc:d},updated_at:new Date().toISOString()}); _kbSynced[d.id]=h; changed=true; }
-      catch(e){ console.warn("syncKbDocs upsert failed",e); }
+      try{ await upsertRow(TBL.kb,d.id,d); _kbSynced[d.id]=h; changed=true; }
+      catch(e){ console.warn("syncKbToCloud upsert failed",e); }
     }
   }
-  var toDel=[];
-  Object.keys(_kbSynced).forEach(function(id){ if(!localIds[id])toDel.push(id); });
-  toDel=toDel.filter(function(v,i,a){return a.indexOf(v)===i;});
+  var toDel=Object.keys(_kbSynced).filter(function(id){return !localIds[id];});
   for(var j=0;j<toDel.length;j++){
-    try{ await _db.from("geo_store").delete().eq("id",kbCloudId(toDel[j])); delete _kbSynced[toDel[j]]; changed=true; }
-    catch(e){ console.warn("syncKbDocs delete failed",e); }
+    try{ await deleteRow(TBL.kb,toDel[j]); delete _kbSynced[toDel[j]]; changed=true; }
+    catch(e){ console.warn("syncKbToCloud delete failed",e); }
   }
-  if(changed){_kbRev=(_kbRev||0)+1;kbSyncPersist();}
+  if(changed)kbSyncPersist();
+  return changed;
 }
-async function fetchKbDocs(){
+/* 拉取知识库：仅列出云端 id（返回极小），只取回本地缺失/指纹不符/云端独有 的篇，不整包搬运。 */
+async function fetchKbToLocal(){
   if(!_cloudReady||!_db)return;
   try{
-    // 1) 仅列出云端 kb 独立行的 id（返回体极小），避免一次性拉回全部文档正文
-    var lr=await _db.from("geo_store").select("id").like("id","kb:%");
+    var lr=await _db.from(TBL.kb).select("id");
     if(lr.error)return;
-    var cloudIds=(lr.data||[]).map(function(x){return String(x.id||"").replace(/^kb:/,"");}).filter(Boolean);
-    var local=getKB()||[], localMap={}, need={};
-    local.forEach(function(d){ if(d&&d.id)localMap[d.id]=d; });
-    // 2) 本地缺完整内容、或内容指纹与云端元数据不符 → 需要取回
+    var cloudIds=(lr.data||[]).map(function(x){return String(x.id);}).filter(Boolean);
+    var local=getKB()||[],localMap={},need={};
+    local.forEach(function(d){if(d&&d.id)localMap[d.id]=d;});
     local.forEach(function(d){
       if(!d||!d.id)return;
       var full=!!(d.html||d.text||(typeof d.data==="string"?d.data:JSON.stringify(d.data||"")));
@@ -1218,21 +1171,19 @@ async function fetchKbDocs(){
     var changed=false;
     for(var i=0;i<ids.length;i++){
       try{
-        var rr=await _db.from("geo_store").select("*").eq("id",kbCloudId(ids[i])).maybeSingle();
-        if(rr.error||!rr.data||!rr.data.payload||!rr.data.payload.doc)continue;
-        var doc=rr.data.payload.doc;
+        var rr=await _db.from(TBL.kb).select("*").eq("id",ids[i]).maybeSingle();
+        if(rr.error||!rr.data||!rr.data.payload)continue;
+        var doc=rr.data.payload;
         setKB(fillKbFromCloud(getKB(),[doc])); // 仅补缺重字段，不覆盖本地已有完整内容
         _kbSynced[doc.id]=kbDocHash(doc);
         changed=true;
-      }catch(e){ console.warn("fetchKbDocs single failed",e); }
+      }catch(e){ console.warn("fetchKbToLocal single failed",e); }
     }
     if(changed)kbSyncPersist();
-  }catch(e){ console.warn("fetchKbDocs failed",e); }
+  }catch(e){ console.warn("fetchKbToLocal failed",e); }
 }
-/* 文章训练范文大文件拆分为云端独立行（geo_store.id="rec:<recId>"），主行 default 仅存轻量元数据，
-   与知识库拆行同一思路，解决「整行几 MB（大量长文堆积）过 Cloudflare 反代被 body 卡死」的问题；多设备完整内容仍由独立行按需回填。 */
+/* 文章训练：每篇范文存为 geo_train 的一个独立行（id=recId，payload=完整范文），与知识库同理脱离单表。 */
 function recMeta(d){ if(!d)return d; var o={}; for(var k in d)o[k]=d[k]; delete o.content; delete o.html; o.preview=(String(d.content||d.html||"")).slice(0,500); o.h=recDocHash(d); return o; }
-function recCloudId(id){ return "rec:"+id; }
 function recSyncPersist(){try{localStorage.setItem(K+"recsync",JSON.stringify(_recSynced));}catch(e){}} // 持久化文章逐篇同步指纹，避免每次刷新重复全量推送
 function recDocHash(d){ return _h((d&&d.content||"")+"\u0001"+(d&&d.html||"")+"\u0001"+(typeof (d&&d.notes)==="string"?d.notes:"")); }
 function fillRecFromCloud(localArr,cloudArr){ // 用独立行完整 content/html 补全本地缺失的重字段（仅补缺，不覆盖已有）
@@ -1240,60 +1191,56 @@ function fillRecFromCloud(localArr,cloudArr){ // 用独立行完整 content/html
   var byId={};cloudArr.forEach(function(x){if(x&&x.id)byId[x.id]=x;});
   return (localArr||[]).map(function(x){var c=byId[x&&x.id];if(!c)return x;var o={};for(var k in x)o[k]=x[k];if(!o.content&&c.content)o.content=c.content;if(!o.html&&c.html)o.html=c.html;if(o.h==null&&c.h!=null)o.h=c.h;return o;});
 }
-async function syncRecDocs(){
-  if(!_cloudReady||!_db)return;
-  var local=getTrain()||[], localIds={};
-  local.forEach(function(d){ if(d&&d.id)localIds[d.id]=1; });
+/* 推送文章训练：逐篇比对指纹，仅 upsert 改动过的篇；本地已删除的篇同步删除其独立行。 */
+async function syncTrainToCloud(){
+  if(!_cloudReady||!_db)return false;
+  var local=getTrain()||[],localIds={};local.forEach(function(d){if(d&&d.id)localIds[d.id]=1;});
   var changed=false;
   for(var i=0;i<local.length;i++){
-    var d=local[i]; if(!d||!d.id)continue;
+    var d=local[i];if(!d||!d.id)continue;
     var h=recDocHash(d);
     if(_recSynced[d.id]!==h){
-      try{ await _db.from("geo_store").upsert({id:recCloudId(d.id),payload:{doc:d},updated_at:new Date().toISOString()}); _recSynced[d.id]=h; changed=true; }
-      catch(e){ console.warn("syncRecDocs upsert failed",e); }
+      try{ await upsertRow(TBL.train,d.id,d); _recSynced[d.id]=h; changed=true; }
+      catch(e){ console.warn("syncTrainToCloud upsert failed",e); }
     }
   }
-  var toDel=[];
-  Object.keys(_recSynced).forEach(function(id){ if(!localIds[id])toDel.push(id); });
-  toDel=toDel.filter(function(v,i,a){return a.indexOf(v)===i;});
+  var toDel=Object.keys(_recSynced).filter(function(id){return !localIds[id];});
   for(var j=0;j<toDel.length;j++){
-    try{ await _db.from("geo_store").delete().eq("id",recCloudId(toDel[j])); delete _recSynced[toDel[j]]; changed=true; }
-    catch(e){ console.warn("syncRecDocs delete failed",e); }
+    try{ await deleteRow(TBL.train,toDel[j]); delete _recSynced[toDel[j]]; changed=true; }
+    catch(e){ console.warn("syncTrainToCloud delete failed",e); }
   }
-  if(changed){_recRev=(_recRev||0)+1;recSyncPersist();}
+  if(changed)recSyncPersist();
+  return changed;
 }
-async function fetchRecDocs(){
+/* 拉取文章训练：仅列出云端 id（返回极小），只取回本地缺失/指纹不符/云端独有 的篇，不整包搬运。 */
+async function fetchTrainToLocal(){
   if(!_cloudReady||!_db)return;
   try{
-    // 1) 仅列出云端 rec 独立行的 id（返回体极小），避免一次性拉回全部范文正文
-    var lr=await _db.from("geo_store").select("id").like("id","rec:%");
+    var lr=await _db.from(TBL.train).select("id");
     if(lr.error)return;
-    var cloudIds=(lr.data||[]).map(function(x){return String(x.id||"").replace(/^rec:/,"");}).filter(Boolean);
-    var local=getTrain()||[], localMap={}, need={};
-    local.forEach(function(d){ if(d&&d.id)localMap[d.id]=d; });
-    // 2) 本地缺完整内容、或内容指纹与云端元数据不符 → 需要取回
+    var cloudIds=(lr.data||[]).map(function(x){return String(x.id);}).filter(Boolean);
+    var local=getTrain()||[],localMap={},need={};
+    local.forEach(function(d){if(d&&d.id)localMap[d.id]=d;});
     local.forEach(function(d){
       if(!d||!d.id)return;
       var full=!!(d.content||d.html);
       if(!full || (d.h!=null && d.h!==recDocHash(d))) need[d.id]=1;
     });
-    // 3) 云端有、本地完全没有的范文（新设备首次同步）
     cloudIds.forEach(function(id){ if(!localMap[id]) need[id]=1; });
     var ids=Object.keys(need); if(!ids.length)return;
-    // 4) 逐篇直取（而非整包搬运），仅传输真正需要的那几篇
     var changed=false;
     for(var i=0;i<ids.length;i++){
       try{
-        var rr=await _db.from("geo_store").select("*").eq("id",recCloudId(ids[i])).maybeSingle();
-        if(rr.error||!rr.data||!rr.data.payload||!rr.data.payload.doc)continue;
-        var doc=rr.data.payload.doc;
+        var rr=await _db.from(TBL.train).select("*").eq("id",ids[i]).maybeSingle();
+        if(rr.error||!rr.data||!rr.data.payload)continue;
+        var doc=rr.data.payload;
         setTrain(fillRecFromCloud(getTrain(),[doc])); // 仅补缺重字段，不覆盖本地已有完整内容
         _recSynced[doc.id]=recDocHash(doc);
         changed=true;
-      }catch(e){ console.warn("fetchRecDocs single failed",e); }
+      }catch(e){ console.warn("fetchTrainToLocal single failed",e); }
     }
     if(changed)recSyncPersist();
-  }catch(e){ console.warn("fetchRecDocs failed",e); }
+  }catch(e){ console.warn("fetchTrainToLocal failed",e); }
 }
 function getKB(){return _kbMem;}
 function setKB(a){_kbMem=a||[];
