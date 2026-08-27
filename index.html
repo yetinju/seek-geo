@@ -643,7 +643,7 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
           <h3><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>关于本系统</h3>
           <p class="sub">SeekGeo（GEO 软文工作台）—— 面向 GEO（生成式引擎优化）的一站式内容生产系统。集成「企业画像、企业知识库、文章训练、风格规范、软文库、生成器」六大模块：先沉淀品牌素材与知识，再按八大分类训练范文、提炼专属写作风格，最后一键生成更易被 AI 搜索引擎（ChatGPT / Perplexity / 豆包 / 元宝等）收录与引用的软文。</p>
           <p class="kv">数据本地以浏览器缓存 + IndexedDB 双重留存，并经 Cloudflare 反代同步至 Supabase 云端实现多设备实时共享；离线时自动降级为本地存储，联网后自动续传。企业知识库已升级为 IndexedDB 持久化，刷新与重启浏览器均不会丢失。</p>
-          <p class="kv" style="margin-top:8px;color:#0f766e;font-weight:600">构建版本：2026-08-24（ac44cc8）· 已拆为七张按模块独立表（geo_records/geo_train/geo_ents/geo_specs/geo_kb/geo_cfg/geo_tomb）；若上传/生成点击无反应，多为浏览器缓存了旧版，请 Ctrl/Cmd + Shift + R 硬刷新本页。</p>
+          <p class="kv" style="margin-top:8px;color:#0f766e;font-weight:600">构建版本：2026-08-24 · 多表版（ac44cc8）+ 知识库已接入生成、训练取全部分类范文；若上传/生成点击无反应，多为浏览器缓存了旧版，请 Ctrl/Cmd + Shift + R 硬刷新本页。</p>
         </div>
 
         <div class="card">
@@ -1621,12 +1621,20 @@ function buildPrompt(){
     p+="\n【写作风格规范】（基于「风格规范」模块中"+(spec.category?("「"+spec.category+"」分类"):"当前使用")+"的规范，由 AI 通读该分类训练范文提炼得出；请严格遵循其语气、结构、钩子与表达习惯来写作）\n";
     p+=spec.content+"\n";
   }
-  var trains=getTrain().filter(function(t){return (t.category||"未分类")===tone;}).slice(0,3);
-  if(!trains.length)trains=getTrain().slice(0,3);
+  var trains=getTrain().filter(function(t){return (t.category||"未分类")===tone;});
+  if(!trains.length)trains=getTrain().slice();
   if(trains.length){
     p+="\n【风格参考范文】（请学习以下范文的行文风格、结构与表达技巧，使本次产出与之保持一致的写作水准）\n";
     trains.forEach(function(t,i){
       p+="范文"+(i+1)+"（《"+(t.title||"未命名")+"》）：\n"+(t.content||"").slice(0,1500)+"\n\n";
+    });
+  }
+  var kbs=getKB();
+  if(kbs&&kbs.length){
+    p+="\n【企业知识库参考】（请从中提取与主题相关的产品参数、技术事实、行业依据，确保文中数据与事实有出处、可验证）\n";
+    kbs.slice(0,5).forEach(function(d,i){
+      var body=d.kind==="text"?(d.text||""):(d.data?"（二进制资料，无法提取正文，仅记录文件名供参考）":"");
+      p+="资料"+(i+1)+"（《"+(d.name||"未命名")+"》）：\n"+body.slice(0,1200)+"\n\n";
     });
   }
   p+="\n【写作规范——务必遵守】\n";
