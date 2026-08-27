@@ -410,6 +410,9 @@ body.login-ok #loginScreen{display:none}
 .qc-item.active{border-color:var(--brand);box-shadow:0 0 0 2px var(--brand-soft);background:var(--brand-soft)}
 .qc-item.active .ti{color:var(--brand-ink)}
 .qc-view-empty{color:var(--sub);background:var(--surface-2);border:1px dashed var(--line);border-radius:12px;padding:26px;text-align:center}
+.qc-kb-bar{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
+.qc-kb-bar label{font-size:13px;color:var(--ink2)}
+.qc-kb-bar select{padding:9px 12px;border:1px solid var(--bd);border-radius:10px;font-size:13.5px;background:#fff;color:var(--txt)}
 .qc-view{background:var(--surface-2);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:12px}
 .qc-view .kb-view{white-space:pre-wrap;font-size:13.5px;line-height:1.7;max-height:340px;overflow:auto}
 .qc-actions{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap}
@@ -681,6 +684,10 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
           </div>
           <div class="qc-right">
             <div id="qcView" class="qc-view-empty">请先在左侧选择一篇软文。</div>
+            <div class="qc-kb-bar" id="qcKbBar" style="display:none">
+              <label>质检参考知识库文档 <span class="hint">默认选「生成该软文时参考的文档」</span></label>
+              <select id="qcKb"></select>
+            </div>
             <div class="qc-actions" id="qcActions" style="display:none">
               <button class="btn" id="btnQc">⚡ 自动质检</button>
               <button class="btn ghost" id="btnQcSave">💾 保存到质检查询</button>
@@ -729,7 +736,7 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
           <h3><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>关于本系统</h3>
           <p class="sub">SeekGeo（GEO 软文工作台）—— 面向 GEO（生成式引擎优化）的一站式内容生产系统。集成「企业画像、企业知识库、文章训练、风格规范、软文库、生成器」六大模块：先沉淀品牌素材与知识，再按八大分类训练范文、提炼专属写作风格，最后一键生成更易被 AI 搜索引擎（ChatGPT / Perplexity / 豆包 / 元宝等）收录与引用的软文。</p>
           <p class="kv">数据本地以浏览器缓存 + IndexedDB 双重留存，并经 Cloudflare 反代同步至 Supabase 云端实现多设备实时共享；离线时自动降级为本地存储，联网后自动续传。企业知识库已升级为 IndexedDB 持久化，刷新与重启浏览器均不会丢失。</p>
-          <p class="kv" style="margin-top:8px;color:#0f766e;font-weight:600">构建版本：2026-08-24 · 多表版（f4eed9e）+ 软文质检左侧列表精简；若上传/生成点击无反应，多为浏览器缓存了旧版，请 Ctrl/Cmd + Shift + R 硬刷新本页。</p>
+          <p class="kv" style="margin-top:8px;color:#0f766e;font-weight:600">构建版本：2026-08-24 · 多表版（f4eed9e）+ 生成按相关性取最相关1篇知识库、质检默认选生成参考文档、质检查询不显示无依据表述；若上传/生成点击无反应，多为浏览器缓存了旧版，请 Ctrl/Cmd + Shift + R 硬刷新本页。</p>
         </div>
 
         <div class="card">
@@ -1670,6 +1677,19 @@ function picked(container){return $all('input:checked',container).map(function(c
 function closeSheet(){$("#mask").classList.remove("show");$("#sheet").classList.remove("sheet-wide");$("#sheet").classList.remove("sheet-edit");}
 
 /* ============ 生成 ============ */
+/* 分词（中文逐字、拉丁/数字连续段整体，避免「采样率1msps」并成一个词导致匹配失败）+ 主题相关性取最相关 1 篇知识库文档 */
+function tokWords(s){return (s||"").toLowerCase().match(/[一-龥]|[a-z0-9]+/g)||[];}
+function topKbDoc(kbs,text){
+  var artSet={};tokWords(text).forEach(function(t){if(t.length>=2||/^[一-龥]$/.test(t))artSet[t]=1;});
+  var best=null,bestScore=-1;
+  (kbs||[]).forEach(function(d){
+    var txt=(d.name||"")+"\n"+(d.kind==="text"?(d.text||""):(d.data?"":""));
+    var toks=tokWords(txt),score=0,seen={};
+    toks.forEach(function(t){if((t.length>=2||/^[一-龥]$/.test(t))&&artSet[t]&&!seen[t]){score++;seen[t]=1;}});
+    if(score>bestScore){bestScore=score;best=d;}
+  });
+  return bestScore>0?best:null;
+}
 function buildPrompt(){
   var title=$("#g_title").value.trim();
   var kw=$("#g_kw").value.trim();
@@ -1717,19 +1737,27 @@ function buildPrompt(){
       p+="范文"+(i+1)+"（《"+(t.title||"未命名")+"》）：\n"+(t.content||"").slice(0,1500)+"\n\n";
     });
   }
-  var kbs=getKB();
-  if(kbs&&kbs.length){
+  var kbs=getKB()||[];
+  var refDoc=topKbDoc(kbs,(title+" "+(kw||"")+" "+(sell||"")));
+  var kbRefId=refDoc?refDoc.id:null;
+  if(kbs.length){
     p+="\n【企业知识库参考】（请从中提取与主题相关的产品参数、技术事实、行业依据，确保文中数据与事实有出处、可验证）\n";
-    kbs.slice(0,5).forEach(function(d,i){
-      var body=d.kind==="text"?(d.text||""):(d.data?"（二进制资料，无法提取正文，仅记录文件名供参考）":"");
-      p+="资料"+(i+1)+"（《"+(d.name||"未命名")+"》）：\n"+body.slice(0,1200)+"\n\n";
-    });
+    if(refDoc){
+      var body=refDoc.kind==="text"?(refDoc.text||""):(refDoc.data?"（二进制资料，无法提取正文，仅记录文件名供参考）":"");
+      p+="资料1（《"+(refDoc.name||"未命名")+"》）：\n"+body.slice(0,1200)+"\n\n";
+      p+="（已按主题/核心关键词相关性筛选最相关的 1 篇知识库文档作为参考）\n";
+    }else{
+      kbs.slice(0,5).forEach(function(d,i){
+        var body=d.kind==="text"?(d.text||""):(d.data?"（二进制资料，无法提取正文，仅记录文件名供参考）":"");
+        p+="资料"+(i+1)+"（《"+(d.name||"未命名")+"》）：\n"+body.slice(0,1200)+"\n\n";
+      });
+    }
   }
   p+="\n【写作规范——务必遵守】\n";
   p+="1. 关键词与 SEO：核心关键词「"+(kw||"（主题相关词）")+"」在全文自然出现 3～5 次即可，严禁为堆砌关键词生硬嵌入、严禁重复同一个短语、严禁为凑词破坏语句通顺；关键词只在语义自然处使用。\n";
   p+="2. 对比措辞：涉及与本产品/品牌作对比的其他设备、竞品或「普通/入门」机型时，不得使用绝对化贬损或夸大其劣势的措辞；请改用「常见」「通常」「部分机型」「一般量级」等留有余地、客观的表述，避免把对比对象一概描绘成明显更差。\n";
   p+="\n请直接输出正文。";
-  return {title:title,kw:kw,engines:engines,tone:tone,len:len,prompt:p,ent:ent};
+  return {title:title,kw:kw,engines:engines,tone:tone,len:len,prompt:p,ent:ent,kbRefId:kbRefId};
 }
 
 function setGenLoading(on){
@@ -1779,7 +1807,7 @@ async function doGen(){
     var text=await callLLM(info.prompt);
     toast("生成完成，正在做专业自检…");
     var final=await selfCheckArticle(text);
-    lastGen={title:info.title,kw:info.kw,engines:info.engines,tone:info.tone,content:final};
+    lastGen={title:info.title,kw:info.kw,engines:info.engines,tone:info.tone,content:final,kbRefId:info.kbRefId||null};
     $("#genOut").style.display="block";$("#genOut").textContent=final;
     $("#genBar").style.display="flex";
     toast("生成完成（已自检修订）");
@@ -1813,7 +1841,7 @@ function saveArticleFromGen(){
   var recs=getRecords();
   var headTitle=extractArticleTitle(lastGen.content);          // 优先用正文里的真实标题
   var useTitle=headTitle||lastGen.title||lastGen.kw||"未命名软文";
-  var r={id:uid(),type:"article",title:useTitle,keywords:lastGen.kw,targetEngines:lastGen.engines,tone:lastGen.tone,length:lastGen.len||800,status:"待发布",publishDate:TODAY,indexedEngines:[],content:lastGen.content,notes:"",createdAt:TODAY,updatedAt:nowStr()};
+  var r={id:uid(),type:"article",title:useTitle,keywords:lastGen.kw,targetEngines:lastGen.engines,tone:lastGen.tone,length:lastGen.len||800,status:"待发布",publishDate:TODAY,indexedEngines:[],content:lastGen.content,notes:"",kbRefId:lastGen.kbRefId||"",createdAt:TODAY,updatedAt:nowStr()};
   recs.push(r);setRecords(recs);libPage=1;refreshAll();
   toast("已存入软文库");switchTab("lib");
 }
@@ -1869,8 +1897,16 @@ function renderQcRight(){
   view.innerHTML='<div class="meta" style="margin:0 0 10px"><span>🔑 '+(r.keywords||"—")+'</span><span>🎯 '+((r.targetEngines||[]).join("/")||"—")+'</span>'+(r.tone?'<span>🏷 '+esc(r.tone)+'</span>':'')+'</div>'+
     '<div class="kb-view">'+esc(r.content||"（无正文）")+'</div>';
   acts.style.display="flex";
+  // 参考知识库文档选择：默认选中「生成该软文时参考的文档」（kbRefId），无则自动最相关
+  var kbBar=$("#qcKbBar"),sel=$("#qcKb");
+  kbBar.style.display="block";
+  var kbs=getKB()||[];
+  var opts='<option value="auto">自动（最相关 1 篇）</option>';
+  kbs.forEach(function(d){opts+='<option value="'+d.id+'">'+esc(d.name||"未命名")+'</option>';});
+  sel.innerHTML=opts;
+  sel.value=(r.kbRefId&&kbs.filter(function(d){return d.id===r.kbRefId;})[0])?r.kbRefId:"auto";
   // 切换软文时清空上一次结果（避免误保存旧结果）
-  lastQc=null;res.innerHTML='<div class="empty-state" style="padding:18px 0">点击「自动质检」，将调用模型比对「企业知识库」并标注引用出处。</div>';
+  lastQc=null;res.innerHTML='<div class="empty-state" style="padding:18px 0">点击「自动质检」，将调用模型比对所选「企业知识库」文档并标注引用出处。</div>';
 }
 
 function setQcLoading(on){
@@ -1885,29 +1921,28 @@ function doQc(){
   if(!kbs.length){toast("企业知识库为空，无法比对");return;}
   setQcLoading(true);
   try{
-    // 成本优化：按「关键词共现」给每篇知识库文档打分，仅保留与本文最相关的 1 篇（无共现词时回退为全部，避免漏检）
-    // 分词：中文逐字、拉丁/数字连续段整体，避免「采样率1msps」被并成一个词导致无法与「采样率」匹配
-    function tok(s){return (s||"").toLowerCase().match(/[一-龥]|[a-z0-9]+/g)||[];}
-    var artSet={};(function(){var a=tok(r.content);a.forEach(function(t){if(t.length>=2||/^[一-龥]$/.test(t))artSet[t]=1;});})();
-    kbs.forEach(function(d){
-      d._body=d.kind==="text"?(d.text||""):(d.data?"":""); // 二进制无纯文本正文，参与打分但比对时标注
-      var toks=tok((d.name||"")+"\n"+d._body);
-      var score=0,seen={};
-      toks.forEach(function(t){if((t.length>=2||/^[一-龥]$/.test(t))&&artSet[t]&&!seen[t]){score++;seen[t]=1;}});
-      d._score=score;
-    });
-    var ranked=kbs.slice().sort(function(a,b){return b._score-a._score;});
-    var used=ranked.filter(function(d){return d._score>0;}).slice(0,1);
-    var trimmed=false;
-    if(!used.length){used=kbs;} // 完全无共现词则回退全部，保证不漏检
-    else if(kbs.length>1){trimmed=true;}
+    // 质检参考文档：优先使用用户在右栏选择的知识库文档；选「自动」时按主题相关性取最相关的 1 篇；
+    // 无共现词（auto 且全无命中）则回退全部，避免漏检。
+    var selVal=$("#qcKb")?$("#qcKb").value:"auto";
+    var used,trimmed=false,modeNote="";
+    if(selVal&&selVal!=="auto"){
+      var picked=kbs.filter(function(d){return d.id===selVal;})[0];
+      used=picked?[picked]:[];
+      if(!used.length)used=[];
+      modeNote="已指定参考文档《"+(picked?picked.name:"")+"》进行质检";
+    }else{
+      var refDoc=topKbDoc(kbs,r.content);
+      if(refDoc){used=[refDoc];trimmed=kbs.length>1;modeNote="已按主题相关性筛选最相关的 1 篇知识库文档进行质检（共 "+kbs.length+" 篇）";}
+      else{used=kbs;} // 完全无共现词则回退全部，保证不漏检
+    }
+    if(!used.length){toast("所选知识库文档不存在");setQcLoading(false);return;}
     var parts=[],i=0;
     used.forEach(function(d){
       i++;
-      var body=d.kind==="text"?(d._body||"").slice(0,2000):(d.data?"（二进制资料，无纯文本正文可比对，仅记录文件名）":"（无正文）");
+      var body=d.kind==="text"?(d.text||"").slice(0,2000):(d.data?"（二进制资料，无纯文本正文可比对，仅记录文件名）":"（无正文）");
       parts.push("K"+i+" 《"+(d.name||"未命名")+"》\n"+body);
     });
-    if(trimmed)toast("已按主题相关性筛选最相关的 1 篇知识库文档进行质检（共 "+kbs.length+" 篇）");
+    if(modeNote)toast(modeNote);
     var prompt="【企业知识库文档清单】\n"+parts.join("\n\n---\n\n")+
       "\n\n【待质检软文正文】\n"+(r.content||"")+
       "\n\n请按你的系统指令，严格输出 JSON 质检报告（逐条标注软文引用了哪一篇知识库文档的哪一部分）。";
@@ -1941,13 +1976,6 @@ function renderQcResult(data,r){
     h+='</div>';
   }else{
     h+='<div class="empty-state" style="padding:12px 0">未检测到对知识库的引用。</div>';
-  }
-  var uv=(data.unverified||[]);
-  h+='<div class="qc-sec-title">无依据表述（'+uv.length+' 条）</div>';
-  if(uv.length){
-    h+='<ul class="qc-uv">'+uv.map(function(s){return '<li>'+esc(s)+'</li>';}).join("")+'</ul>';
-  }else{
-    h+='<div class="empty-state" style="padding:12px 0">未检出无依据表述。</div>';
   }
   res.innerHTML=h;
 }
@@ -2007,10 +2035,6 @@ function viewQcLog(id){
     });
     h+='</div>';
   }else{h+='<div class="empty-state" style="padding:12px 0">未检测到对知识库的引用。</div>';}
-  var uv=(o.unverified||[]);
-  h+='<div class="qc-sec-title">无依据表述（'+uv.length+' 条）</div>';
-  if(uv.length)h+='<ul class="qc-uv">'+uv.map(function(s){return '<li>'+esc(s)+'</li>';}).join("")+'</ul>';
-  else h+='<div class="empty-state" style="padding:12px 0">未检出无依据表述。</div>';
   sheet.innerHTML=h;
   sheet.classList.add("sheet-wide");
   $("#mask").classList.add("show");
