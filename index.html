@@ -1852,7 +1852,7 @@ function renderQc(){
   box.innerHTML=pageItems.map(function(r){
     return '<div class="item qc-item'+(r.id===qcSelId?" active":"")+'" data-id="'+r.id+'">'+
       '<div class="ti">'+esc(r.title)+'</div>'+
-      '<div class="meta"><span class="meta-main">'+(r.keywords?'<span class="kw">🔑 '+esc(r.keywords)+'</span>':'')+'<span>🎯 '+((r.targetEngines||[]).join("/")||"—")+'</span><span>'+IC_DOC+' '+countWords(r.content)+' 字</span></span><span class="time">生成于 '+fmtTime(r.createdAt,r.updatedAt)+(r.tone?' · '+esc(r.tone):'')+'</span></div>'+
+      '<div class="meta"><span class="meta-main">'+(r.keywords?'<span class="kw">🔑 '+esc(r.keywords)+'</span>':'')+'</span><span class="time">生成于 '+fmtTime(r.createdAt,r.updatedAt)+'</span></div>'+
     '</div>';
   }).join("")+pagerHTML(total,qcPage,PAGE_SIZE);
   $all(".qc-item",box).forEach(function(el){
