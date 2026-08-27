@@ -2040,7 +2040,11 @@ function kbIconColor(ext){
   return "#64748b";
 }
 function renderKb(){
-  var all=getKB().slice().sort(function(a,b){return (b.uploadedAt||"").localeCompare(a.uploadedAt||"");});
+  var all=getKB().slice().sort(function(a,b){
+    var ta=a.ts||a.updated_at||0, tb=b.ts||b.updated_at||0;
+    if(ta!==tb)return tb-ta;
+    return (b.uploadedAt||"").localeCompare(a.uploadedAt||"");
+  });
   var list=kbCat?all.filter(function(r){return r.category===kbCat;}):all;
   var box=$("#kbList");
   if(!all.length){box.innerHTML='<div class="empty-state">知识库还是空的，先上传一些企业资料吧～</div>';return;}
@@ -2138,7 +2142,11 @@ function handleKBUpload(e){
 /* ============ 文章训练 ============ */
 function getTrainList(){return getTrain();}
 function renderTrain(){
-  var all=getTrain().slice().sort(function(a,b){return (b.uploadedAt||"").localeCompare(a.uploadedAt||"");});
+  var all=getTrain().slice().sort(function(a,b){
+    var ta=a.ts||0, tb=b.ts||0;
+    if(ta!==tb)return tb-ta;                 // 同一天/同毫秒时按精确时间戳倒序，最新上传置顶
+    return (b.uploadedAt||"").localeCompare(a.uploadedAt||""); // 旧数据无 ts 时按日期兜底
+  });
   var list=all.filter(function(x){return !trainCat || (x.category||"未分类")===trainCat;});
   var box=$("#trainList");
   if(!list.length){box.innerHTML='<div class="empty-state">'+(trainCat?('「'+trainCat+'」分类下还没有训练范文，去上方上传时选择该分类即可。'):'还没有训练范文。点击上方「选择文件」可一次上传多篇 (.txt / .md / .docx)，自动加入下方列表。')+'</div>';return;}
@@ -2167,7 +2175,7 @@ function renderTrain(){
 function addTrainRecord(title,content,cat){
   if(!content||!content.trim()){toast("内容为空，无法训练");return false;}
   var trains=getTrain();
-  trains.push({id:uid(),title:title||("未命名范文 "+TODAY),content:content,words:content.length,uploadedAt:TODAY,category:cat||""});
+  trains.push({id:uid(),title:title||("未命名范文 "+TODAY),content:content,words:content.length,uploadedAt:TODAY,ts:Date.now(),category:cat||""});
   trainPage=1;setTrain(trains);renderTrain();
   return trains.length;
 }
