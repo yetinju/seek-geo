@@ -410,7 +410,11 @@ body.login-ok #loginScreen{display:none}
 .qc-item.active{border-color:var(--brand);box-shadow:0 0 0 2px var(--brand-soft);background:var(--brand-soft)}
 .qc-item.active .ti{color:var(--brand-ink)}
 .qc-view-empty{color:var(--sub);background:var(--surface-2);border:1px dashed var(--line);border-radius:12px;padding:26px;text-align:center}
+.qc-card-act{margin-top:10px;display:flex;justify-content:flex-end}
+.qc-card-act .btn{min-height:32px;padding:6px 14px;font-size:12.5px}
 .qc-kb-bar{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
+.qc-kb-info{font-size:13.5px;font-weight:500;color:var(--txt);background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:9px 12px}
+.qc-status{padding:18px 0;color:var(--brand-ink);font-size:13.5px;text-align:center}
 .qc-kb-bar label{font-size:13px;color:var(--ink2)}
 .qc-kb-bar select{padding:9px 12px;border:1px solid var(--bd);border-radius:10px;font-size:13.5px;background:#fff;color:var(--txt)}
 .qc-view{background:var(--surface-2);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:12px}
@@ -685,11 +689,10 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
           <div class="qc-right">
             <div id="qcView" class="qc-view-empty">请先在左侧选择一篇软文。</div>
             <div class="qc-kb-bar" id="qcKbBar" style="display:none">
-              <label>质检参考知识库文档 <span class="hint">默认选「生成该软文时参考的文档」</span></label>
-              <select id="qcKb"></select>
+              <label>参考知识库文档</label>
+              <div id="qcKbInfo" class="qc-kb-info">—</div>
             </div>
             <div class="qc-actions" id="qcActions" style="display:none">
-              <button class="btn" id="btnQc">⚡ 自动质检</button>
               <button class="btn ghost" id="btnQcSave">💾 保存到质检查询</button>
             </div>
             <div id="qcResult" class="qc-result"></div>
@@ -736,7 +739,7 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
           <h3><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>关于本系统</h3>
           <p class="sub">SeekGeo（GEO 软文工作台）—— 面向 GEO（生成式引擎优化）的一站式内容生产系统。集成「企业画像、企业知识库、文章训练、风格规范、软文库、生成器」六大模块：先沉淀品牌素材与知识，再按八大分类训练范文、提炼专属写作风格，最后一键生成更易被 AI 搜索引擎（ChatGPT / Perplexity / 豆包 / 元宝等）收录与引用的软文。</p>
           <p class="kv">数据本地以浏览器缓存 + IndexedDB 双重留存，并经 Cloudflare 反代同步至 Supabase 云端实现多设备实时共享；离线时自动降级为本地存储，联网后自动续传。企业知识库已升级为 IndexedDB 持久化，刷新与重启浏览器均不会丢失。</p>
-          <p class="kv" style="margin-top:8px;color:#0f766e;font-weight:600">构建版本：2026-08-24 · 多表版（eb2f04f）+ 生成按相关性取最相关1篇知识库、质检默认选生成参考文档、质检查询不显示无依据表述；若上传/生成点击无反应，多为浏览器缓存了旧版，请 Ctrl/Cmd + Shift + R 硬刷新本页。</p>
+          <p class="kv" style="margin-top:8px;color:#0f766e;font-weight:600">构建版本：2026-08-24 · 多表版（eb2f04f）+ 软文质检按钮移入卡片、右栏显示状态与默认参考文档名；若上传/生成点击无反应，多为浏览器缓存了旧版，请 Ctrl/Cmd + Shift + R 硬刷新本页。</p>
         </div>
 
         <div class="card">
@@ -1881,10 +1884,17 @@ function renderQc(){
     return '<div class="item qc-item'+(r.id===qcSelId?" active":"")+'" data-id="'+r.id+'">'+
       '<div class="ti">'+esc(r.title)+'</div>'+
       '<div class="meta"><span class="meta-main">'+(r.keywords?'<span class="kw">🔑 '+esc(r.keywords)+'</span>':'')+'</span><span class="time">生成于 '+fmtTime(r.createdAt,r.updatedAt)+'</span></div>'+
+      '<div class="qc-card-act"><button class="btn sm btn-qcard" data-qid="'+r.id+'">⚡ 自动质检</button></div>'+
     '</div>';
   }).join("")+pagerHTML(total,qcPage,PAGE_SIZE);
   $all(".qc-item",box).forEach(function(el){
     el.addEventListener("click",function(){qcSelId=el.getAttribute("data-id");renderQc();renderQcRight();});
+  });
+  $all(".btn-qcard",box).forEach(function(b){
+    b.addEventListener("click",function(e){
+      e.stopPropagation();
+      qcSelId=b.getAttribute("data-qid");renderQc();renderQcRight();doQc();
+    });
   });
   bindPager(box,"qcPage",renderQc);
 }
@@ -1897,20 +1907,17 @@ function renderQcRight(){
   view.innerHTML='<div class="meta" style="margin:0 0 10px"><span>🔑 '+(r.keywords||"—")+'</span><span>🎯 '+((r.targetEngines||[]).join("/")||"—")+'</span>'+(r.tone?'<span>🏷 '+esc(r.tone)+'</span>':'')+'</div>'+
     '<div class="kb-view">'+esc(r.content||"（无正文）")+'</div>';
   acts.style.display="flex";
-  // 参考知识库文档选择：默认选中「生成该软文时参考的文档」（kbRefId），无则自动最相关
-  var kbBar=$("#qcKbBar"),sel=$("#qcKb");
-  kbBar.style.display="block";
+  // 显示默认参考文档名称（生成时记录的 kbRefId），无则自动最相关
   var kbs=getKB()||[];
-  var opts='<option value="auto">自动（最相关 1 篇）</option>';
-  kbs.forEach(function(d){opts+='<option value="'+d.id+'">'+esc(d.name||"未命名")+'</option>';});
-  sel.innerHTML=opts;
-  sel.value=(r.kbRefId&&kbs.filter(function(d){return d.id===r.kbRefId;})[0])?r.kbRefId:"auto";
+  var refDoc=r.kbRefId?kbs.filter(function(d){return d.id===r.kbRefId;})[0]:null;
+  $("#qcKbBar").style.display="block";
+  $("#qcKbInfo").textContent=refDoc?(refDoc.name||"未命名"):"自动（最相关 1 篇）";
   // 切换软文时清空上一次结果（避免误保存旧结果）
-  lastQc=null;res.innerHTML='<div class="empty-state" style="padding:18px 0">点击「自动质检」，将调用模型比对所选「企业知识库」文档并标注引用出处。</div>';
+  lastQc=null;res.innerHTML='<div class="empty-state" style="padding:18px 0">点击卡片中的「自动质检」按钮开始比对。</div>';
 }
 
 function setQcLoading(on){
-  var b=$("#btnQc");if(!b)return;b.disabled=on;b.textContent=on?"质检中…（可能需 10-30 秒）":"⚡ 自动质检";
+  $all(".btn-qcard").forEach(function(b){b.disabled=on;});
 }
 
 function doQc(){
@@ -1921,21 +1928,20 @@ function doQc(){
   if(!kbs.length){toast("企业知识库为空，无法比对");return;}
   setQcLoading(true);
   try{
-    // 质检参考文档：优先使用用户在右栏选择的知识库文档；选「自动」时按主题相关性取最相关的 1 篇；
-    // 无共现词（auto 且全无命中）则回退全部，避免漏检。
-    var selVal=$("#qcKb")?$("#qcKb").value:"auto";
+    // 质检参考文档：默认使用生成该软文时参考的知识库文档（kbRefId），否则按主题相关性取最相关 1 篇，无命中则回退全部。
+    var refDoc=r.kbRefId?kbs.filter(function(d){return d.id===r.kbRefId;})[0]:null;
     var used,trimmed=false,modeNote="";
-    if(selVal&&selVal!=="auto"){
-      var picked=kbs.filter(function(d){return d.id===selVal;})[0];
-      used=picked?[picked]:[];
-      if(!used.length)used=[];
-      modeNote="已指定参考文档《"+(picked?picked.name:"")+"》进行质检";
+    if(refDoc){
+      used=[refDoc];
+      modeNote="已指定参考文档《"+(refDoc.name||"")+"》进行质检";
     }else{
-      var refDoc=topKbDoc(kbs,r.content);
-      if(refDoc){used=[refDoc];trimmed=kbs.length>1;modeNote="已按主题相关性筛选最相关的 1 篇知识库文档进行质检（共 "+kbs.length+" 篇）";}
+      var topDoc=topKbDoc(kbs,r.content);
+      if(topDoc){used=[topDoc];trimmed=kbs.length>1;modeNote="已按主题相关性筛选最相关的 1 篇知识库文档进行质检（共 "+kbs.length+" 篇）";}
       else{used=kbs;} // 完全无共现词则回退全部，保证不漏检
     }
     if(!used.length){toast("所选知识库文档不存在");setQcLoading(false);return;}
+    var res=$("#qcResult");
+    res.innerHTML='<div class="qc-status">⏳ 质检中，正在比对《'+(used[0].name||"未命名")+'》…</div>';
     var parts=[],i=0;
     used.forEach(function(d){
       i++;
@@ -2876,7 +2882,6 @@ async function init(){
     });
   });
   $("#qcSearch").addEventListener("input",function(){qcSearch=this.value;qcPage=1;renderQc();});
-  $("#btnQc").addEventListener("click",doQc);
   $("#btnQcSave").addEventListener("click",saveQc);
   // 云端连接在 UI 绑定完成后后台进行（不 await），即使云端慢/挂起也不阻塞界面交互
   initCloud();
