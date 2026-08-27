@@ -2456,7 +2456,10 @@ function applyTheme(t){
 }
 async function init(){
   await kbInit();            // 先从 IndexedDB 恢复本地知识库（云端不可用时也能还原，根治刷新丢文档）
-  await initCloud();
+  // ⚠️ 关键：UI 绑定与首屏渲染必须在「连接云端」之前完成。
+  // initCloud 含真实网络请求（连 Supabase/Cloudflare 反代），在云端慢/挂起时会长时间 pending，
+  // 若放在 await 之后，下面的所有事件监听（含文章上传、知识库上传、生成等）都要等云端连上才绑定，
+  // 导致界面在「连接云端…」期间完全不可用、点上传无反应。故先让界面可交互，云端连接在最后后台进行。
   applyTheme(document.documentElement.dataset.theme==="dark"?"dark":"light");
   // 兼容旧版单条风格规范 → 列表
   if(getTrainSpec()&&!getSpecs().length){
@@ -2581,6 +2584,8 @@ async function init(){
   $("#btnClear").addEventListener("click",clearAll);
   // mask close
   $("#mask").addEventListener("click",function(e){if(e.target===$("#mask"))closeSheet();});
+  // 云端连接在 UI 绑定完成后后台进行（不 await），即使云端慢/挂起也不阻塞界面交互
+  initCloud();
 }
 
 /* ============ 登录 ============ */
@@ -2616,6 +2621,8 @@ function initLogin(){
 
 initLogin();
 init();
+// 云端连接在 init() 内部已放到 UI 绑定之后后台进行（见 init 内 initCloud 调用），此处无需再 await。
+// 若 init() 内 initCloud 因网络慢而 pending，界面早已可交互，不受影响。
 </script>
 </body>
 </html>
