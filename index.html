@@ -724,7 +724,7 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
           <h3><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>关于本系统</h3>
           <p class="sub">SeekGeo（GEO 软文工作台）—— 面向 GEO（生成式引擎优化）的一站式内容生产系统。集成「企业画像、企业知识库、文章训练、风格规范、软文库、生成器」六大模块：先沉淀品牌素材与知识，再按八大分类训练范文、提炼专属写作风格，最后一键生成更易被 AI 搜索引擎（ChatGPT / Perplexity / 豆包 / 元宝等）收录与引用的软文。</p>
           <p class="kv">数据本地以浏览器缓存 + IndexedDB 双重留存，并经 Cloudflare 反代同步至 Supabase 云端实现多设备实时共享；离线时自动降级为本地存储，联网后自动续传。企业知识库已升级为 IndexedDB 持久化，刷新与重启浏览器均不会丢失。</p>
-          <p class="kv" style="margin-top:8px;color:#0f766e;font-weight:600">构建版本：2026-08-24 · 多表版（a94f5e1）+ 修复「软文质检参考知识库文档名 PC/手机端不一致」：① 生成软文时即将按主题算出的最相关知识库文档 id 固化进文章 kbRefId（不再每次实时重算）；② topKbDoc 在正文懒加载未到位时退化为仅按文件名打分，避免两端同步时机不同导致最相关文档漂移；③ 存量软文打开质检时自动自愈补写 kbRefId，保证各端显示一致。两端均硬刷新（Ctrl+F5 / 长按刷新选「重新加载」）即可生效。</p>
+          <p class="kv" style="margin-top:8px;color:#0f766e;font-weight:600">构建版本：2026-08-24 · 多表版（c37b812）+ 优化「生成软文参考知识库文档」：① 参考文档由「最相关 1 篇」改为「最相关 top-3」拼接进 prompt，避免单一通用介绍文档（如「产品简介」）因正文/品类词高度重合而一家独大；② topKbDocs 打分池并入文档分类（如「产品信息」），使 docx 产品资料凭型号+分类也能参与竞争、按主题精准匹配；③ 最相关那篇 id 仍固化进 kbRefId 保证质检端一致。两端均硬刷新（Ctrl+F5 / 长按刷新选「重新加载」）即可生效。</p>
         </div>
 
         <div class="card">
@@ -1851,20 +1851,23 @@ function closeSheet(){$("#mask").classList.remove("show");$("#sheet").classList.
 /* ============ 生成 ============ */
 /* 分词（中文逐字、拉丁/数字连续段整体，避免「采样率1msps」并成一个词导致匹配失败）+ 主题相关性取最相关 1 篇知识库文档 */
 function tokWords(s){return (s||"").toLowerCase().match(/[一-龥]|[a-z0-9]+/g)||[];}
-function topKbDoc(kbs,text){
+function topKbDoc(kbs,text){return topKbDocs(kbs,text,1)[0]||null;}
+/* 按主题相关性返回最相关的 N 篇知识库文档（用于生成时多元化参考，避免只盯一篇）；
+   打分源：文件名 + 分类 + 正文（正文懒加载未到位时仅用前两者，docx 等产品资料也能凭型号/分类参与竞争）。 */
+function topKbDocs(kbs,text,n){
+  n=n||1;
   var artSet={};tokWords(text).forEach(function(t){if(t.length>=2||/^[一-龥]$/.test(t))artSet[t]=1;});
-  var best=null,bestScore=-1;
-  (kbs||[]).forEach(function(d){
-    // 正文（text/data）可能尚未从云端懒加载到位；此时只用文件名(name)参与打分，
-    // 避免「本端正文未加载 → 该文档得分骤降 → 最相关文档在不同步时机漂移」导致 PC/手机端参考文档名不一致。
-    // （docx 等二进制文档本就无纯文本正文，历来只靠文件名匹配，与此口径统一）
+  var scored=(kbs||[]).map(function(d){
+    // 文档侧参与打分的文本：文件名恒有；分类恒有（如「产品信息」含"产品"）；正文懒加载未到位则省略（避免得分骤降）
     var hasBody=!!(d.text||d.data);
-    var txt=hasBody?(d.name||"")+"\n"+(d.kind==="text"?(d.text||""):(d.data?"":"")):(d.name||"");
+    var txt=[d.name||"", d.category||""].join("\n");
+    if(hasBody)txt+="\n"+(d.kind==="text"?(d.text||""):(d.data?"":""));
     var toks=tokWords(txt),score=0,seen={};
     toks.forEach(function(t){if((t.length>=2||/^[一-龥]$/.test(t))&&artSet[t]&&!seen[t]){score++;seen[t]=1;}});
-    if(score>bestScore){bestScore=score;best=d;}
-  });
-  return bestScore>0?best:null;
+    return {d:d,score:score};
+  }).filter(function(x){return x.score>0;});
+  scored.sort(function(a,b){return b.score-a.score;});
+  return scored.slice(0,n).map(function(x){return x.d;});
 }
 function buildPrompt(){
   var title=$("#g_title").value.trim();
@@ -1914,23 +1917,22 @@ function buildPrompt(){
     });
   }
   var kbs=getKB()||[];
-  var refDoc=topKbDoc(kbs,(title+" "+(kw||"")+" "+(sell||"")));
+  // 参考文档：按主题相关性取最相关 top-3 拼接进 prompt（而非仅 1 篇），避免单一通用介绍文档（如「产品简介」）
+  // 因正文/品类词高度重合而一家独大；同时把最相关那篇 id 固化进 kbRefId，保证质检端显示一致。
+  var refs=topKbDocs(kbs,(title+" "+(kw||"")+" "+(sell||"")),3);
+  var refDoc=refs[0]||null;
   var kbRefId=refDoc?refDoc.id:null;
-  if(!kbRefId){
-    // 未手动指定参考文档时，按主题（标题+关键词）取最相关 1 篇知识库文档，并将其 id 固化进 kbRefId，
-    // 避免生成后各端在不同步时机/不同缓存状态下实时重算 topKbDoc 导致「参考文档名」漂移（PC/手机显示不一致）。
-    var topByTopic=topKbDoc(kbs,(title||"")+" "+(kw||""));
-    if(topByTopic)kbRefId=topByTopic.id;
-  }
   if(kbs.length){
     p+="\n【企业知识库参考】（请从中提取与主题相关的产品参数、技术事实、行业依据，确保文中数据与事实有出处、可验证）\n";
-    if(refDoc){
-      var body=refDoc.kind==="text"?(refDoc.text||""):(refDoc.data?"（二进制资料，无法提取正文，仅记录文件名供参考）":"");
-      p+="资料1（《"+(refDoc.name||"未命名")+"》）：\n"+body.slice(0,1200)+"\n\n";
-      p+="（已按主题/核心关键词相关性筛选最相关的 1 篇知识库文档作为参考）\n";
+    if(refs.length){
+      refs.forEach(function(d,i){
+        var body=d.kind==="text"?(d.text||""):(d.data?"（二进制资料，无法提取正文，仅记录文件名供参考）":"（无正文）");
+        p+="资料"+(i+1)+"（《"+(d.name||"未命名")+"》）：\n"+body.slice(0,1200)+"\n\n";
+      });
+      p+="（已按主题/核心关键词相关性筛选最相关的 "+refs.length+" 篇知识库文档作为参考，优先级从高到低）\n";
     }else{
       kbs.slice(0,5).forEach(function(d,i){
-        var body=d.kind==="text"?(d.text||""):(d.data?"（二进制资料，无法提取正文，仅记录文件名供参考）":"");
+        var body=d.kind==="text"?(d.text||""):(d.data?"（二进制资料，无法提取正文，仅记录文件名供参考）":"（无正文）");
         p+="资料"+(i+1)+"（《"+(d.name||"未命名")+"》）：\n"+body.slice(0,1200)+"\n\n";
       });
     }
