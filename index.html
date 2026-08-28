@@ -405,7 +405,9 @@ body.login-ok #loginScreen{display:none}
 .qc-toolbar-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .qc-casc{display:flex;align-items:center;gap:8px;flex:1;min-width:0}
 .qc-casc-sep{color:var(--sub);font-size:18px;font-weight:700;flex:none}
-.qc-sel{flex:1;min-width:0;padding:10px 12px;border:1px solid var(--bd);border-radius:10px;font-size:13.5px;background:#fff;color:var(--txt);max-width:100%}
+.qc-sel{min-width:0;padding:10px 12px;border:1px solid var(--bd);border-radius:10px;font-size:13.5px;background:#fff;color:var(--txt);max-width:100%}
+#qcCatSel{flex:0 0 180px}
+#qcArtSel{flex:1}
 [data-theme="dark"] .qc-sel{background:var(--surface);color:var(--txt)}
 .qc-toolbar-row .btn{min-height:38px;white-space:nowrap}
 .qc-kb-bar{display:flex;flex-direction:column;gap:6px;margin-bottom:0}
@@ -436,6 +438,8 @@ body.login-ok #loginScreen{display:none}
 .qc-log-sum{font-size:12.5px;color:var(--sub);line-height:1.6;margin-top:6px}
 @media(max-width:560px){
   .qc-toolbar-row{flex-direction:column;align-items:stretch}
+  .qc-casc{width:100%}
+  #qcCatSel,#qcArtSel{flex:1 1 auto;width:100%}
   .qc-toolbar-row .btn{width:100%}
 }
 </style>
@@ -1857,14 +1861,14 @@ function renderQc(){
     artSel.innerHTML='<option value="">请先去生成器生成软文</option>';
     artSel.disabled=true; qcSelId=null; syncQcCasc(); return;
   }
-  // 第一级：品牌调性（去重，保持固定顺序）
-  var TONES=["专业严谨","亲切温暖","年轻活力","高端奢华","科技未来"];
+  // 第一级：软文库 8 大分类（去重，保持固定顺序）
+  var CATS=["实测/评测报告","避坑/风险警示","选型/采购指南","原理技术解析","入门科普","行业报告","渠道服务","成本分析"];
   var have={}; recs.forEach(function(r){have[r.tone||"未分类"]=1;});
-  var cats=TONES.filter(function(t){return have[t];});
+  var cats=CATS.filter(function(t){return have[t];});
   if(have["未分类"])cats.push("未分类");
   if(!qcCat||!have[qcCat])qcCat=cats[0];
   catSel.innerHTML=cats.map(function(t){return '<option value="'+esc(t)+'"'+(t===qcCat?" selected":"")+'>'+esc(t)+'</option>';}).join("");
-  // 第二级：该调性下的软文
+  // 第二级：该分类下的软文
   var list=recs.filter(function(r){return !qcCat||(r.tone||"未分类")===qcCat;});
   artSel.disabled=false;
   artSel.innerHTML=list.map(function(r){
