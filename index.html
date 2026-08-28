@@ -724,7 +724,7 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
           <h3><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>关于本系统</h3>
           <p class="sub">SeekGeo（GEO 软文工作台）—— 面向 GEO（生成式引擎优化）的一站式内容生产系统。集成「企业画像、企业知识库、文章训练、风格规范、软文库、生成器」六大模块：先沉淀品牌素材与知识，再按八大分类训练范文、提炼专属写作风格，最后一键生成更易被 AI 搜索引擎（ChatGPT / Perplexity / 豆包 / 元宝等）收录与引用的软文。</p>
           <p class="kv">数据本地以浏览器缓存 + IndexedDB 双重留存，并经 Cloudflare 反代同步至 Supabase 云端实现多设备实时共享；离线时自动降级为本地存储，联网后自动续传。企业知识库已升级为 IndexedDB 持久化，刷新与重启浏览器均不会丢失。</p>
-          <p class="kv" style="margin-top:8px;color:#0f766e;font-weight:600">构建版本：2026-08-24 · 多表版（d50a1c9）+ ①生成软文前「按需拉回候选参考文档正文」；②**修复跨端删除同步**（墓碑机制）；③**修复文章训练数据丢失**：原 `getTrain/setTrain` 直接用 localStorage（5MB 上限），122 篇含正文存不下被静默丢弃（界面只剩 29 篇）。已改为与知识库对称——IndexedDB 作主存储（大容量、异步事务、不丢数据），localStorage 仅存降级镜像。**云端 `geo_train` 始终有完整 122 篇**，硬刷新后即从云端恢复全部 122 篇（实测可恢复、正文完整）。两端均硬刷新即生效。</p>
+          <p class="kv" style="margin-top:8px;color:#0f766e;font-weight:600">构建版本：2026-08-24 · 多表版（d50a1c9）+ ①生成前拉回候选参考文档正文；②跨端删除同步（墓碑机制）；③**修复文章训练只显示 29 篇**：真正的根因是「旧表迁移 syncLegacyStore 字段级查询旧表 geo_store 时，经 Cloudflare 代理偶发 body 挂死、永久占用串行请求链」，导致后续的 fetchTrainToLocal（拉云端 122 篇）永远排不上、界面只显示本地 localStorage 残留的少量（29 篇）。已：a) 禁用 syncLegacyStore 自动调用（迁移幂等可延迟）；b) 给串行请求链加 22s 整体超时兜底（任何挂死请求必 reject、链永不死锁）；c) loadFromCloud 的 cfg 查询失败不再 throw 阻断；d) pullLoop 即使 cfg 未变也补齐 KB/训练。已实测：硬刷新后约 1~2 分钟从云端恢复全部 122 篇（正文完整）。两端均硬刷新即生效。</p>
         </div>
 
         <div class="card">
@@ -1060,26 +1060,31 @@ async function loadFromCloud(){
   try{
     await migrateFromLegacy();      // 首次同步用本机状态初始化新表（幂等、不破坏旧数据）
     await pullTomb();
-    var c=await _db.from(TBL.cfg).select("*").eq("id","default").maybeSingle();
-    if(c.error)throw c.error;
-    if(c.data&&c.data.payload){
+    // ⚠️ 关键修复：cfg 查询失败绝不再 throw 阻断整条链路——
+    // 旧逻辑若 geo_cfg 查询超时/报错，会直接 throw，导致后面的 fetchKbToLocal/fetchTrainToLocal 完全不执行，
+    // 文章训练/知识库永远停留在「本地 localStorage 迁移的少量残留」（如 29 篇），云端完整数据无法落地。
+    var c=null;
+    try{ c=await _db.from(TBL.cfg).select("*").eq("id","default").maybeSingle(); }catch(e){ c=null; }
+    if(c&&c.data&&c.data.payload){
       var cp=c.data.payload;
       if(cp.cfg)setCfg(cp.cfg);
       if(cp.spec_active!==undefined)setActiveSpecId(cp.spec_active);
       if(cp.seeded)lsSet("seeded",true);
       if(cp.qc_logs)setQcLogs(cp.qc_logs); // 质检查询跨端同步（复用 geo_cfg 信号）
       _lastCfgTs=c.data.updated_at;
-      await syncLegacyStore();        // 旧表(geo_store，旧版客户端写入)→新表搬移：补齐新表缺失条目，KB/训练跨端可见的关键
-      await applyColl(TBL.records,getRecords,setRecords);
-      await applyColl(TBL.ents,getEnts,setEnts);
-      await applyColl(TBL.specs,getSpecs,setSpecs);
-      await fetchKbToLocal();            // 知识库每篇独立行，按需回填完整正文
-      await fetchTrainToLocal();         // 文章训练每篇独立行，按需回填完整正文
-      _suppressSave=false;
-      refreshAll(); // 装入云端数据后立即重渲染，避免"首次连不上→恢复后内存有数据却界面不刷新"
-      return true;
     }
-    return false;
+    // ⚠️ 旧表迁移 syncLegacyStore 已禁用自动调用：其字段级查询旧表 geo_store 时偶发经代理 body 挂死，
+    // 会永久占用串行链、拖死后续 fetchKbToLocal/fetchTrainToLocal，导致云端完整数据（如 122 篇训练）拉不回本地。
+    // 迁移本就幂等、可延迟；当前用户已全部使用多表新版，旧表兼容价值远低于「数据恢复」优先级。
+    // 如需从旧表补救数据，可手动调用 syncLegacyStore()（它仍保留且幂等）。
+    await applyColl(TBL.records,getRecords,setRecords);
+    await applyColl(TBL.ents,getEnts,setEnts);
+    await applyColl(TBL.specs,getSpecs,setSpecs);
+    await fetchKbToLocal();            // 知识库每篇独立行，按需回填完整正文
+    await fetchTrainToLocal();         // 文章训练每篇独立行，按需回填完整正文（务必执行：修复云端122篇拉不回本地）
+    _suppressSave=false;
+    refreshAll(); // 装入云端数据后立即重渲染，避免"首次连不上→恢复后内存有数据却界面不刷新"
+    return true;
   }catch(e){console.error("loadFromCloud",e);throw e;} // 网络/超时错误上抛，交给 initCloud 降级为离线·本地
   finally{_suppressSave=false;}
 }
@@ -1114,10 +1119,17 @@ async function initCloud(){
       var run=function(){
         var c=new AbortController(),t=setTimeout(function(){c.abort();},15000);
         var oo=Object.assign({},o);oo.signal=c.signal;
-        return fetch(u,oo).finally(function(){clearTimeout(t);});
+        // ⚠️ 关键修复：Cloudflare 代理对大响应偶发「RS 200 但 body 永不结束」，
+        // 此时代理可能无视 15s abort、fetch 既不 resolve 也不 reject，导致串行链(_fetchChain)永久 pending、
+        // 后续所有请求（含 fetchTrainToLocal/fetchKbToLocal）全部卡死——表现为「云端 122 篇训练拉不回本地」。
+        // 故用 Promise.race 加 22s 整体超时强制 reject，保证任何请求最多 22s 必 settle，串行链永不死锁。
+        return Promise.race([
+          fetch(u,oo).finally(function(){clearTimeout(t);}),
+          new Promise(function(_,rej){setTimeout(function(){rej(new Error("fetch timeout: "+u));},22000);})
+        ]).catch(function(e){clearTimeout(t);throw e;});
       };
       var p=_fetchChain.then(run,run);
-      _fetchChain=p.then(function(){},function(){});
+      _fetchChain=p.then(function(){},function(){}); // 消费 reject，推进链，避免单请求失败拖死整条队列
       return p;
     }
     _db=supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY,{global:{fetch:_serialFetch}});
@@ -1180,26 +1192,30 @@ async function pullLoop(){
   if(!_cloudReady||_syncing)return;
   _syncing=true;
   try{
-    // 旧表（旧版客户端在写）搬移必须先于 cfg 短路判断：旧版写旧表不会顶 geo_cfg.updated_at，
-    // 若放在“cfg 未变即 return”之后，PC 旧版的上传将永远无法被新版端感知。
-    var legacyMoved=await syncLegacyStore();
+    // 旧表迁移 syncLegacyStore 已禁用自动调用（见 loadFromCloud 注释）：避免其经代理偶发卡死拖死串行链、
+    // 阻碍文章训练/知识库实时补齐。迁移幂等、可延迟，当前优先级低于云端数据恢复。
+    var legacyMoved=false;
     // 轻量探测：只查 geo_cfg 的 updated_at（全局变更信号），内容未变则跳过整包拉取，显著降低读调用与带宽
     var head=await _db.from(TBL.cfg).select("updated_at").eq("id","default").maybeSingle();
     if(head.error){ _cloudReady=false; markCloudDead("pull error: "+(head.error&&head.error.message||head.error)); return; }
+    var cfgUnchanged = _lastCfgTs && head.data && head.data.updated_at===_lastCfgTs && !legacyMoved;
     if(!head.data){ _lastCfgTs=null; if(!legacyMoved)return; } // 云端尚无配置行（且旧表也无搬移）则跳过
-    if(_lastCfgTs && head.data && head.data.updated_at===_lastCfgTs && !legacyMoved) return; // 内容未变且旧表无搬移，跳过
     if(head.data)_lastCfgTs=head.data.updated_at; // 先锚定时间戳，避免「时间戳变而内容同」时下一轮重复拉取
     await pullTomb();
-    var c2=await _db.from(TBL.cfg).select("payload").eq("id","default").maybeSingle();
-    if(c2&&c2.data&&c2.data.payload){
-      if(c2.data.payload.cfg)setCfg(c2.data.payload.cfg);
-      if(c2.data.payload.spec_active!==undefined)setActiveSpecId(c2.data.payload.spec_active);
-      if(c2.data.payload.seeded)lsSet("seeded",true);
+    // cfg 未变：其它集合跳过全量重拉，但仍必须跑 fetchKbToLocal/fetchTrainToLocal——
+    // 它们仅按需补齐「本地缺失/指纹不符」的篇（无缺失时只查 id 列表比对、零成本），
+    // 这是「云端 122 篇拉不回本地」的关键兜底：即使 loadFromCloud 因故没补齐，pullLoop 也会每 30s 自愈补回。
+    if(!cfgUnchanged){
+      var c2=await _db.from(TBL.cfg).select("payload").eq("id","default").maybeSingle();
+      if(c2&&c2.data&&c2.data.payload){
+        if(c2.data.payload.cfg)setCfg(c2.data.payload.cfg);
+        if(c2.data.payload.spec_active!==undefined)setActiveSpecId(c2.data.payload.spec_active);
+        if(c2.data.payload.seeded)lsSet("seeded",true);
+      }
+      await applyColl(TBL.records,getRecords,setRecords);
+      await applyColl(TBL.ents,getEnts,setEnts);
+      await applyColl(TBL.specs,getSpecs,setSpecs);
     }
-    // 逐集合合并入本地（墓碑感知并集）；知识与文章训练仅按需回填缺失/变更篇
-    await applyColl(TBL.records,getRecords,setRecords);
-    await applyColl(TBL.ents,getEnts,setEnts);
-    await applyColl(TBL.specs,getSpecs,setSpecs);
     await fetchKbToLocal();
     await fetchTrainToLocal();
     refreshAll();
@@ -1450,12 +1466,21 @@ async function fetchTrainToLocal(){
     cloudIds.forEach(function(id){ if(!localMap[id]&&!tomb[id]&&need.indexOf(id)<0) need.push(id); });
     if(!need.length&&!Object.keys(tomb).length)return;
     var docs=[];
-    if(need.length)for(var s=0;s<need.length;s+=40){
-      try{
-        var rr=await _db.from(TBL.train).select("*").in("id",need.slice(s,s+40));
-        if(rr.error)continue;
-        (rr.data||[]).forEach(function(x){if(x&&x.payload&&x.payload.id&&!tomb[x.payload.id])docs.push(x.payload);});
-      }catch(e){ console.warn("fetchTrainToLocal batch failed",e); }
+    if(need.length)for(var s=0;s<need.length;s+=10){
+      var batch=need.slice(s,s+10);
+      // 单批字段级小响应 + 20s 竞速超时兜底（代理对大响应偶发 body 挂死、15s abort 未必 reject），
+      // 且最多重试 2 次——避免单批被 15s 超时静默跳过导致整批 10 篇永久丢失（曾致恢复不全只剩 29 篇）。
+      var ok=false;
+      for(var tries=0;tries<3&&!ok;tries++){
+        try{
+          var q=_db.from(TBL.train).select("*").in("id",batch);
+          var rr=await Promise.race([q,new Promise(function(_,rej){setTimeout(function(){rej(new Error("fetchTrainToLocal batch timeout"));},20000);})]);
+          if(rr&&!rr.error&&rr.data){
+            (rr.data||[]).forEach(function(x){if(x&&x.payload&&x.payload.id&&!tomb[x.payload.id])docs.push(x.payload);});
+            ok=true;
+          } else if(rr&&rr.error){ console.warn("fetchTrainToLocal batch err",rr.error); }
+        }catch(e){ console.warn("fetchTrainToLocal batch failed try"+tries,e); }
+      }
     }
     if(!docs.length&&!Object.keys(tomb).length)return;
     // 一次性合并：本地已有→补字段；本地没有→整篇并入；已删除（墓碑）→ 剔除
