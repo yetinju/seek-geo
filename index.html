@@ -724,7 +724,7 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
           <h3><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>关于本系统</h3>
           <p class="sub">SeekGeo（GEO 软文工作台）—— 面向 GEO（生成式引擎优化）的一站式内容生产系统。集成「企业画像、企业知识库、文章训练、风格规范、软文库、生成器」六大模块：先沉淀品牌素材与知识，再按八大分类训练范文、提炼专属写作风格，最后一键生成更易被 AI 搜索引擎（ChatGPT / Perplexity / 豆包 / 元宝等）收录与引用的软文。</p>
           <p class="kv">数据本地以浏览器缓存 + IndexedDB 双重留存，并经 Cloudflare 反代同步至 Supabase 云端实现多设备实时共享；离线时自动降级为本地存储，联网后自动续传。企业知识库已升级为 IndexedDB 持久化，刷新与重启浏览器均不会丢失。</p>
-          <p class="kv" style="margin-top:8px;color:#0f766e;font-weight:600">构建版本：2026-08-24 · 多表版（d50a1c9）+ ①生成软文前「按需拉回候选参考文档正文」：按主题算 top-3 候选后，将其中正文缺失的文档从云端单篇拉回（字段级 select + 20s 竞速超时兜底，绝不卡死生成），使 prompt 拼接基于完整正文（含产品参数）而非仅文件名；②**修复跨端删除同步**：PC 端删除并重新上传企业知识库/文章训练文档后，手机端不再显示被删旧文档、只显示新上传文档——`fetchKbToLocal`/`fetchTrainToLocal` 已应用墓碑机制（跳过已删文档的拉取、并清理本端残留缓存）。两端均硬刷新（Ctrl+F5 / 长按刷新选「重新加载」）即可生效。</p>
+          <p class="kv" style="margin-top:8px;color:#0f766e;font-weight:600">构建版本：2026-08-24 · 多表版（d50a1c9）+ ①生成软文前「按需拉回候选参考文档正文」；②**修复跨端删除同步**（墓碑机制）；③**修复文章训练数据丢失**：原 `getTrain/setTrain` 直接用 localStorage（5MB 上限），122 篇含正文存不下被静默丢弃（界面只剩 29 篇）。已改为与知识库对称——IndexedDB 作主存储（大容量、异步事务、不丢数据），localStorage 仅存降级镜像。**云端 `geo_train` 始终有完整 122 篇**，硬刷新后即从云端恢复全部 122 篇（实测可恢复、正文完整）。两端均硬刷新即生效。</p>
         </div>
 
         <div class="card">
@@ -835,6 +835,43 @@ async function kbInit(){
     if(Array.isArray(legacy)&&legacy.length){ arr=legacy; if(kbIDBReady()) await kbIDBPutAll(legacy); }
   }
   _kbMem = Array.isArray(arr) ? arr : [];
+}
+
+/* 文章训练本地存储：与知识库对称，改用 IndexedDB 作主存储（大容量、异步事务，不会因 5MB 配额静默丢数据）。
+   背景：旧版 getTrain/setTrain 直接用 localStorage，122 篇含正文超 5MB 后 setItem 抛异常被静默吞掉，
+   导致界面只看到 localStorage 残留的少量（如 29 篇），云端完整数据无法落地本地。localStorage('train') 仅作降级镜像。 */
+var _trainMem=[];
+var _trainDB=null;
+function trOpenDB(){return new Promise(function(res,rej){try{
+  if(typeof indexedDB==="undefined"||!indexedDB){rej(new Error("no indexedDB"));return;}
+  var req=indexedDB.open("seekgeo_train",1);
+  req.onupgradeneeded=function(){var db=req.result;if(db.objectStoreNames&&!db.objectStoreNames.contains("docs"))db.createObjectStore("docs",{keyPath:"id"});};
+  req.onsuccess=function(){_trainDB=req.result;res(_trainDB);};
+  req.onerror=function(){rej(req.error||new Error("open failed"));};
+}catch(e){rej(e);}});}
+function trIDBReady(){return _trainDB!=null;}
+function trIDBGetAll(){return new Promise(function(res){if(!trIDBReady()){res([]);return;}try{
+  var tx=_trainDB.transaction("docs","readonly"),st=tx.objectStore("docs"),out=[];
+  var cur=st.openCursor();
+  cur.onsuccess=function(){var c=cur.result;if(c){out.push(c.value);c.continue();}else{out.sort(function(a,b){return (b.at||b.uploadedAt||"").localeCompare(a.at||a.uploadedAt||"");});res(out);}};
+  cur.onerror=function(){res([]);};
+}catch(e){res([]);}});}
+function trIDBPutAll(arr){return new Promise(function(res){if(!trIDBReady()){res();return;}try{
+  var tx=_trainDB.transaction("docs","readwrite"),st=tx.objectStore("docs");
+  st.clear();
+  (Array.isArray(arr)?arr:[]).forEach(function(d){if(d&&d.id)st.put(d);});
+  tx.oncomplete=function(){res();};
+  tx.onerror=function(){res();};
+}catch(e){res();}});}
+async function trInit(){
+  try{ await trOpenDB(); }catch(e){ console.warn("文章训练 IndexedDB 不可用，回退 localStorage 模式（仍有配额风险）",e); }
+  var arr = trIDBReady() ? (await trIDBGetAll()) : [];
+  if(!arr.length){
+    var legacy = lsGet("train",[]);   // 兼容升级前 localStorage 旧数据（如 29 篇），首次启动迁移进 IndexedDB
+    if(Array.isArray(legacy)&&legacy.length){ arr=legacy; if(trIDBReady()) await trIDBPutAll(legacy); }
+  }
+  // 兜底：IndexedDB 不可用且 localStorage 也无 → 至少不覆盖成空（避免静默清空用户已有本地数据）
+  _trainMem = Array.isArray(arr) ? arr : (Array.isArray(lsGet("train",[]))?lsGet("train",[]):[]);
 }
 
 /* ============ 云同步（Supabase PostgreSQL · 免费层） ============ */
@@ -1558,8 +1595,8 @@ function setKB(a){_kbMem=a||[];
   if(kbIDBReady()){ kbIDBPutAll(_kbMem).catch(function(e){console.warn("知识库本地保存失败",e);}); }
   try{ lsSet("kbl",_kbMem.map(stripKbHeavy)); }catch(e){ /* 降级镜像写入失败不影响 IndexedDB 主存储 */ }
 }
-function getTrain(){return lsGet("train",[]);}
-function setTrain(a){lsSet("train",a);}
+function getTrain(){return _trainMem||[];}
+function setTrain(a){_trainMem=(Array.isArray(a)?a:[]); if(trIDBReady()){trIDBPutAll(_trainMem).catch(function(e){console.warn("文章训练本地保存失败",e);});} try{ lsSet("train",_trainMem.map(function(d){var o={};for(var k in d)o[k]=d[k];delete o.content;delete o.html;o.preview=(String(d.content||d.html||"")).slice(0,200);o.h=recDocHash(d);return o;})); }catch(e){ /* 降级镜像超配额不影响 IndexedDB 主存储 */ } }
 function getTrainSpec(){return lsGet("train_spec",null);}
 function setTrainSpec(o){lsSet("train_spec",o);}
 function isSpecStale(s){
@@ -2998,6 +3035,7 @@ function applyTheme(t){
 }
 async function init(){
   try{ await kbInit(); }catch(e){ console.warn("kbInit 失败，降级为无 IndexedDB 模式继续",e); } // 本地库异常也绝不让界面卡死：监听照常绑定
+  try{ await trInit(); }catch(e){ console.warn("trInit 失败，降级为无 IndexedDB 模式继续",e); } // 文章训练本地库改为 IndexedDB，避免 5MB 配额静默丢数据
   // ⚠️ 关键：UI 绑定与首屏渲染必须在「连接云端」之前完成。
   // initCloud 含真实网络请求（连 Supabase/Cloudflare 反代），在云端慢/挂起时会长时间 pending，
   // 若放在 await 之后，下面的所有事件监听（含文章上传、知识库上传、生成等）都要等云端连上才绑定，
