@@ -401,26 +401,18 @@ body.login-ok #loginScreen{display:none}
 [data-theme="dark"] .brand-mark{box-shadow:0 4px 12px rgba(0,0,0,.4)}
 
 /* ============ 软文质检 / 质检查询 ============ */
-.qc-wrap{display:flex;gap:18px;align-items:flex-start;margin-top:14px}
-.qc-left{flex:0 0 400px;max-width:400px;min-width:0}
-.qc-right{flex:1;min-width:0}
-.qc-toolbar{display:flex;gap:8px;margin-bottom:10px}
-.qc-toolbar input{padding:9px 12px;border:1px solid var(--bd);border-radius:10px;font-size:13.5px;background:#fff;color:var(--txt)}
-.qc-left .item{cursor:pointer}
-.qc-item.active{border-color:var(--brand);box-shadow:0 0 0 2px var(--brand-soft);background:var(--brand-soft)}
-.qc-item.active .ti{color:var(--brand-ink)}
-.qc-view-empty{color:var(--sub);background:var(--surface-2);border:1px dashed var(--line);border-radius:12px;padding:26px;text-align:center}
-.qc-card-act{margin-top:10px;display:flex;justify-content:flex-end}
-.qc-card-act .btn{min-height:32px;padding:6px 14px;font-size:12.5px}
-.qc-kb-bar{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
+.qc-wrap.qc-stack{display:flex;flex-direction:column;gap:14px;margin-top:14px}
+.qc-toolbar-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.qc-casc{display:flex;align-items:center;gap:8px;flex:1;min-width:0}
+.qc-casc-sep{color:var(--sub);font-size:18px;font-weight:700;flex:none}
+.qc-sel{flex:1;min-width:0;padding:10px 12px;border:1px solid var(--bd);border-radius:10px;font-size:13.5px;background:#fff;color:var(--txt);max-width:100%}
+[data-theme="dark"] .qc-sel{background:var(--surface);color:var(--txt)}
+.qc-toolbar-row .btn{min-height:38px;white-space:nowrap}
+.qc-kb-bar{display:flex;flex-direction:column;gap:6px;margin-bottom:0}
 .qc-kb-info{font-size:13.5px;font-weight:500;color:var(--txt);background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:9px 12px}
-.qc-status{padding:18px 0;color:var(--brand-ink);font-size:13.5px;text-align:center}
+.qc-status{padding:22px 0;color:var(--brand-ink);font-size:13.5px;text-align:center}
 .qc-kb-bar label{font-size:13px;color:var(--ink2)}
-.qc-kb-bar select{padding:9px 12px;border:1px solid var(--bd);border-radius:10px;font-size:13.5px;background:#fff;color:var(--txt)}
-.qc-view{background:var(--surface-2);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin-bottom:12px}
-.qc-art-title{font-size:16px;font-weight:600;color:var(--txt);line-height:1.5}
-.qc-view .kb-view{white-space:pre-wrap;font-size:13.5px;line-height:1.7;max-height:340px;overflow:auto}
-.qc-actions{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.qc-actions{display:flex;gap:10px;margin-bottom:0;flex-wrap:wrap}
 .qc-result{min-height:40px}
 .qc-summary{background:var(--brand-soft);border:1px solid var(--brand);border-radius:10px;padding:12px 14px;margin-bottom:14px;font-size:13.5px;line-height:1.7;white-space:pre-wrap}
 .qc-sec-title{font-weight:600;font-size:13.5px;color:var(--ink2);margin:14px 0 8px}
@@ -442,10 +434,9 @@ body.login-ok #loginScreen{display:none}
 [data-theme="dark"] .qc-uv li{color:#fca5a5}
 .qc-log-item .acts{display:flex;gap:8px;margin-top:10px}
 .qc-log-sum{font-size:12.5px;color:var(--sub);line-height:1.6;margin-top:6px}
-@media(max-width:860px){
-  .qc-wrap{flex-direction:column}
-  .qc-left{flex:1 1 auto;max-width:none;width:100%}
-  .qc-right{width:100%}
+@media(max-width:560px){
+  .qc-toolbar-row{flex-direction:column;align-items:stretch}
+  .qc-toolbar-row .btn{width:100%}
 }
 </style>
 </head>
@@ -667,37 +658,25 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
       <section class="panel" id="p_qc">
         <div class="card">
           <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z"/><path d="m21 21-4.3-4.3"/></svg>软文质检</h3>
-          <p class="sub">左侧选择一篇软文，点「自动质检」后，右侧报告会逐条标注软文引用了<b>哪一篇企业知识库文档的哪一部分</b>，并给出「核得上 / 核不上 / 部分」结论，便于溯源核验。可一键保存到「质检查询」。</p>
+          <p class="sub">用上方的级联选择器选定要质检的软文（先选品牌调性，再选具体软文），点「自动质检」后，下方报告会逐条标注软文引用了<b>哪一篇企业知识库文档的哪一部分</b>，并给出「核得上 / 核不上 / 部分」结论，便于溯源核验。可一键保存到「质检查询」。</p>
         </div>
-        <div class="qc-wrap">
-          <div class="qc-left">
-            <div class="qc-toolbar">
-              <input id="qcSearch" placeholder="搜索标题/关键词" style="flex:1;min-width:80px">
+        <div class="qc-wrap qc-stack">
+          <div class="qc-toolbar-row">
+            <div class="qc-casc">
+              <select id="qcCatSel" class="qc-sel" aria-label="品牌调性"></select>
+              <span class="qc-casc-sep">›</span>
+              <select id="qcArtSel" class="qc-sel" aria-label="软文"></select>
             </div>
-            <div class="kb-filters" id="qcFilters">
-              <button class="chip-f active" data-cat="">全部</button>
-              <button class="chip-f" data-cat="实测/评测报告">实测/评测报告</button>
-              <button class="chip-f" data-cat="避坑/风险警示">避坑/风险警示</button>
-              <button class="chip-f" data-cat="选型/采购指南">选型/采购指南</button>
-              <button class="chip-f" data-cat="原理技术解析">原理技术解析</button>
-              <button class="chip-f" data-cat="入门科普">入门科普</button>
-              <button class="chip-f" data-cat="行业报告">行业报告</button>
-              <button class="chip-f" data-cat="渠道服务">渠道服务</button>
-              <button class="chip-f" data-cat="成本分析">成本分析</button>
-            </div>
-            <div id="qcList"></div>
+            <button class="btn primary" id="btnQcRun">⚡ 自动质检</button>
           </div>
-          <div class="qc-right">
-            <div id="qcView" class="qc-view-empty">请先在左侧选择一篇软文。</div>
-            <div class="qc-kb-bar" id="qcKbBar" style="display:none">
-              <label>参考知识库文档</label>
-              <div id="qcKbInfo" class="qc-kb-info">—</div>
-            </div>
-            <div class="qc-actions" id="qcActions" style="display:none">
-              <button class="btn ghost" id="btnQcSave">💾 保存到质检查询</button>
-            </div>
-            <div id="qcResult" class="qc-result"></div>
+          <div class="qc-kb-bar" id="qcKbBar" style="display:none">
+            <label>参考知识库文档</label>
+            <div id="qcKbInfo" class="qc-kb-info">—</div>
           </div>
+          <div class="qc-actions" id="qcActions" style="display:none">
+            <button class="btn ghost" id="btnQcSave">💾 保存到质检查询</button>
+          </div>
+          <div id="qcResult" class="qc-result"><div class="empty-state" style="padding:18px 0">请先选择一篇软文，然后点「自动质检」开始比对。</div></div>
         </div>
       </section>
 
@@ -740,7 +719,7 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
           <h3><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>关于本系统</h3>
           <p class="sub">SeekGeo（GEO 软文工作台）—— 面向 GEO（生成式引擎优化）的一站式内容生产系统。集成「企业画像、企业知识库、文章训练、风格规范、软文库、生成器」六大模块：先沉淀品牌素材与知识，再按八大分类训练范文、提炼专属写作风格，最后一键生成更易被 AI 搜索引擎（ChatGPT / Perplexity / 豆包 / 元宝等）收录与引用的软文。</p>
           <p class="kv">数据本地以浏览器缓存 + IndexedDB 双重留存，并经 Cloudflare 反代同步至 Supabase 云端实现多设备实时共享；离线时自动降级为本地存储，联网后自动续传。企业知识库已升级为 IndexedDB 持久化，刷新与重启浏览器均不会丢失。</p>
-          <p class="kv" style="margin-top:8px;color:#0f766e;font-weight:600">构建版本：2026-08-24 · 多表版（d685219）+ 软文质检跨端同步：质检查询记录现已随云端（geo_cfg）多端同步，PC 保存手机可见；若上传/生成点击无反应，多为浏览器缓存了旧版，请 Ctrl/Cmd + Shift + R 硬刷新本页。</p>
+          <p class="kv" style="margin-top:8px;color:#0f766e;font-weight:600">构建版本：2026-08-24 · 多表版（d685219）+ 软文质检改为上下布局：级联选择器（调性→软文）与「自动质检」按钮同一行，下方显示质检中/质检结果，质检查询记录随云端多端同步；若上传/生成点击无反应，多为浏览器缓存了旧版，请 Ctrl/Cmd + Shift + R 硬刷新本页。</p>
         </div>
 
         <div class="card">
@@ -1870,61 +1849,68 @@ function extractJSON(text){
 
 function renderQc(){
   var recs=getRecords().filter(function(r){return r.type==="article";});
-  var q=qcSearch.trim().toLowerCase();
-  recs=recs.filter(function(r){
-    if(qcCat && (r.tone||"")!==qcCat)return false;
-    if(q && (r.title+r.keywords).toLowerCase().indexOf(q)<0)return false;
-    return true;
-  });
   recs.sort(function(a,b){return (b.updatedAt||b.createdAt||"").localeCompare(a.updatedAt||a.createdAt||"");});
-  var box=$("#qcList");
-  if(!recs.length){box.innerHTML='<div class="empty-state">还没有软文，去「生成器」生成一篇吧～</div>';return;}
-  var total=recs.length;
-  qcPage=Math.min(Math.max(1,qcPage),Math.max(1,Math.ceil(total/PAGE_SIZE)));
-  var pageItems=recs.slice((qcPage-1)*PAGE_SIZE, qcPage*PAGE_SIZE);
-  box.innerHTML=pageItems.map(function(r){
-    return '<div class="item qc-item'+(r.id===qcSelId?" active":"")+'" data-id="'+r.id+'">'+
-      '<div class="ti">'+esc(r.title)+'</div>'+
-      '<div class="meta"><span class="meta-main">'+(r.keywords?'<span class="kw">🔑 '+esc(r.keywords)+'</span>':'')+'</span><span class="time">生成于 '+fmtTime(r.createdAt,r.updatedAt)+'</span></div>'+
-      '<div class="qc-card-act"><button class="btn sm btn-qcard" data-qid="'+r.id+'">⚡ 自动质检</button></div>'+
-    '</div>';
-  }).join("")+pagerHTML(total,qcPage,PAGE_SIZE);
-  $all(".qc-item",box).forEach(function(el){
-    el.addEventListener("click",function(){qcSelId=el.getAttribute("data-id");renderQc();renderQcRight();});
-  });
-  $all(".btn-qcard",box).forEach(function(b){
-    b.addEventListener("click",function(e){
-      e.stopPropagation();
-      qcSelId=b.getAttribute("data-qid");renderQc();renderQcRight();doQc();
-    });
-  });
-  bindPager(box,"qcPage",renderQc);
+  var catSel=$("#qcCatSel"), artSel=$("#qcArtSel");
+  if(!catSel||!artSel)return;
+  if(!recs.length){
+    catSel.innerHTML='<option value="">（暂无软文）</option>';
+    artSel.innerHTML='<option value="">请先去生成器生成软文</option>';
+    artSel.disabled=true; qcSelId=null; syncQcCasc(); return;
+  }
+  // 第一级：品牌调性（去重，保持固定顺序）
+  var TONES=["专业严谨","亲切温暖","年轻活力","高端奢华","科技未来"];
+  var have={}; recs.forEach(function(r){have[r.tone||"未分类"]=1;});
+  var cats=TONES.filter(function(t){return have[t];});
+  if(have["未分类"])cats.push("未分类");
+  if(!qcCat||!have[qcCat])qcCat=cats[0];
+  catSel.innerHTML=cats.map(function(t){return '<option value="'+esc(t)+'"'+(t===qcCat?" selected":"")+'>'+esc(t)+'</option>';}).join("");
+  // 第二级：该调性下的软文
+  var list=recs.filter(function(r){return !qcCat||(r.tone||"未分类")===qcCat;});
+  artSel.disabled=false;
+  artSel.innerHTML=list.map(function(r){
+    return '<option value="'+r.id+'"'+(r.id===qcSelId?" selected":"")+'>'+esc(r.title)+'</option>';
+  }).join("");
+  if(!qcSelId||!list.some(function(r){return r.id===qcSelId;}))qcSelId=list.length?list[0].id:null;
+  // 保持选中项与下拉一致
+  if(qcSelId&&artSel.value!==qcSelId)artSel.value=qcSelId;
+  syncQcCasc();
+}
+
+// 级联联动：调性变化时刷新软文列表；软文变化时刷新右侧参考文档条
+function syncQcCasc(){
+  var catSel=$("#qcCatSel"), artSel=$("#qcArtSel");
+  if(!catSel||!artSel)return;
+  var rec=getRecords().filter(function(x){return x.id===qcSelId;})[0];
+  renderQcKbBar(rec);
 }
 
 function renderQcRight(){
   var r=getRecords().filter(function(x){return x.id===qcSelId;})[0];
-  var view=$("#qcView"),acts=$("#qcActions"),res=$("#qcResult");
-  if(!r){view.className="qc-view-empty";view.textContent="请先在左侧选择一篇软文。";acts.style.display="none";res.innerHTML="";return;}
-  view.className="qc-view";
-  view.innerHTML='<div class="qc-art-title">'+esc(r.title)+'</div>';
-  acts.style.display="flex";
-  // 显示本次质检将要比对的知识库文档标题：优先生成时记录的 kbRefId，否则按主题相关性取最相关 1 篇
+  if(!r){$("#qcKbBar").style.display="none";$("#qcActions").style.display="none";$("#qcResult").innerHTML='<div class="empty-state" style="padding:18px 0">请先选择一篇软文，然后点「自动质检」开始比对。</div>';return;}
+  renderQcKbBar(r);
+  $("#qcActions").style.display="flex";
+  // 切换软文时清空上一次结果（避免误保存旧结果）
+  lastQc=null;
+  $("#qcResult").innerHTML='<div class="empty-state" style="padding:18px 0">点「自动质检」按钮开始比对《'+(r.title)+'》。</div>';
+}
+
+function renderQcKbBar(r){
+  var bar=$("#qcKbBar"), info=$("#qcKbInfo");
+  if(!r){bar.style.display="none";return;}
   var kbs=getKB()||[];
   var refDoc=r.kbRefId?kbs.filter(function(d){return d.id===r.kbRefId;})[0]:null;
   if(!refDoc)refDoc=topKbDoc(kbs,r.content);
-  $("#qcKbBar").style.display="block";
-  $("#qcKbInfo").textContent=refDoc?(refDoc.name||"未命名"):(kbs.length?("全部文档（共 "+kbs.length+" 篇）"):"—");
-  // 切换软文时清空上一次结果（避免误保存旧结果）
-  lastQc=null;res.innerHTML='<div class="empty-state" style="padding:18px 0">点击卡片中的「自动质检」按钮开始比对。</div>';
+  bar.style.display="block";
+  info.textContent=refDoc?(refDoc.name||"未命名"):(kbs.length?("全部文档（共 "+kbs.length+" 篇）"):"—");
 }
 
 function setQcLoading(on){
-  $all(".btn-qcard").forEach(function(b){b.disabled=on;});
+  var b=$("#btnQcRun"); if(b)b.disabled=on;
 }
 
 function doQc(){
   var r=getRecords().filter(function(x){return x.id===qcSelId;})[0];
-  if(!r){toast("请先在左侧选择一篇软文");return;}
+  if(!r){toast("请先在级联选择器中选择一篇软文");return;}
   if(!r.content||!r.content.trim()){toast("该软文没有正文，无法质检");return;}
   var kbs=getKB()||[];
   if(!kbs.length){toast("企业知识库为空，无法比对");return;}
@@ -2714,7 +2700,7 @@ function switchTab(tab){
   if(tab==="kb")renderKb();
   if(tab==="train")renderTrain();
   if(tab==="spec")renderSpecs();
-  if(tab==="qc")renderQc();
+  if(tab==="qc"){renderQc();renderQcRight();}
   if(tab==="qclog")renderQcLog();
   if(tab==="set")fillCfg();
   window.scrollTo(0,0);
@@ -2875,15 +2861,19 @@ async function init(){
   $("#btnClear").addEventListener("click",clearAll);
   // mask close
   $("#mask").addEventListener("click",function(e){if(e.target===$("#mask"))closeSheet();});
-  // 软文质检：筛选与按钮（列表项点击监听在 renderQc 内按项绑定）
-  $all("#qcFilters .chip-f").forEach(function(b){
-    b.addEventListener("click",function(){
-      qcCat=b.getAttribute("data-cat")||"";
-      $all("#qcFilters .chip-f").forEach(function(x){x.classList.toggle("active",x===b);});
-      qcPage=1;renderQc();
+  // 软文质检：级联选择器 + 自动质检按钮
+  var qcCatSel=$("#qcCatSel"), qcArtSel=$("#qcArtSel");
+  if(qcCatSel){
+    qcCatSel.addEventListener("change",function(){
+      qcCat=this.value; qcSelId=null; renderQc(); renderQcRight();
     });
-  });
-  $("#qcSearch").addEventListener("input",function(){qcSearch=this.value;qcPage=1;renderQc();});
+  }
+  if(qcArtSel){
+    qcArtSel.addEventListener("change",function(){
+      qcSelId=this.value; renderQcRight();
+    });
+  }
+  $("#btnQcRun").addEventListener("click",function(){ doQc(); });
   $("#btnQcSave").addEventListener("click",saveQc);
   // 云端连接在 UI 绑定完成后后台进行（不 await），即使云端慢/挂起也不阻塞界面交互
   initCloud();
