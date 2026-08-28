@@ -724,7 +724,7 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
           <h3><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>关于本系统</h3>
           <p class="sub">SeekGeo（GEO 软文工作台）—— 面向 GEO（生成式引擎优化）的一站式内容生产系统。集成「企业画像、企业知识库、文章训练、风格规范、软文库、生成器」六大模块：先沉淀品牌素材与知识，再按八大分类训练范文、提炼专属写作风格，最后一键生成更易被 AI 搜索引擎（ChatGPT / Perplexity / 豆包 / 元宝等）收录与引用的软文。</p>
           <p class="kv">数据本地以浏览器缓存 + IndexedDB 双重留存，并经 Cloudflare 反代同步至 Supabase 云端实现多设备实时共享；离线时自动降级为本地存储，联网后自动续传。企业知识库已升级为 IndexedDB 持久化，刷新与重启浏览器均不会丢失。</p>
-          <p class="kv" style="margin-top:8px;color:#0f766e;font-weight:600">构建版本：2026-08-24 · 多表版（c37b812）+ 优化「生成软文参考知识库文档」：① 参考文档由「最相关 1 篇」改为「最相关 top-3」拼接进 prompt，避免单一通用介绍文档（如「产品简介」）因正文/品类词高度重合而一家独大；② topKbDocs 打分池并入文档分类（如「产品信息」），使 docx 产品资料凭型号+分类也能参与竞争、按主题精准匹配；③ 最相关那篇 id 仍固化进 kbRefId 保证质检端一致。两端均硬刷新（Ctrl+F5 / 长按刷新选「重新加载」）即可生效。</p>
+          <p class="kv" style="margin-top:8px;color:#0f766e;font-weight:600">构建版本：2026-08-24 · 多表版（d50a1c9）+ 生成软文前「按需拉回候选参考文档正文」：按主题算 top-3 候选后，将其中正文缺失的文档从云端单篇拉回（字段级 select + 20s 竞速超时兜底，绝不卡死生成），使拼接进 prompt 的是完整正文（含产品参数）而非仅文件名；本地已有正文则直接用、无需联网。注：当前云端知识库正文因历史迁移只存了元数据，「参考文档」暂仅按文件名参考，请到「企业知识库」重新上传这些文档即可恢复完整正文（自动同步）。两端均硬刷新（Ctrl+F5 / 长按刷新选「重新加载」）即可生效。</p>
         </div>
 
         <div class="card">
@@ -1314,16 +1314,51 @@ async function kbEnsureBody(id,cb){
   var hasBody=!!(r.html||r.text||(typeof r.data==="string"?r.data:null));
   if(hasBody||!_cloudReady||!_db){cb&&cb(id);return;}
   try{
-    var rr=await _db.from(TBL.kb).select("*").eq("id",id).maybeSingle();
-    if(rr.data&&rr.data.payload){
-      var doc=rr.data.payload,cur=getKB();
-      cur=cur.map(function(y){ return (y&&y.id===doc.id)?doc:y; });
-      setKB(cur);
-      _kbSynced[doc.id]=kbDocHash(doc);kbSyncPersist();
+    // 字段级 select 只取正文相关字段（避免 select(*) 拉整篇大 docx 触发代理 body 挂死），并加 20s 竞速超时
+    // （代理对大响应偶发 body 永远不结束、且 15s abort 未必让 fetch reject，必须 race 兜底保证不卡死生成/查看）
+    var q=_db.from(TBL.kb).select("id,payload->id,payload->name,payload->kind,payload->category,payload->type,payload->size,payload->uploadedAt,payload->preview,payload->text,payload->html,payload->data").eq("id",id).maybeSingle();
+    var rr=await Promise.race([q,new Promise(function(_,rej){setTimeout(function(){rej(new Error("kbEnsureBody timeout:"+id));},20000);})]);
+    if(rr&&rr.data){
+      var row=rr.data, doc=row.payload||row;
+      if(!doc||!doc.id)doc=row;
+      if(doc.id){
+        var cur=getKB();
+        cur=cur.map(function(y){ return (y&&y.id===doc.id)?doc:y; });
+        setKB(cur);
+        _kbSynced[doc.id]=kbDocHash(doc);kbSyncPersist();
+      }
       cb&&cb(id);return;
     }
   }catch(e){ console.warn("kbEnsureBody failed",e); }
   cb&&cb(id);
+}
+/* 生成前按需拉回候选参考文档正文：按当前生成主题算 top-3 候选，并行把其中正文缺失的文档从云端单篇拉回，
+   使 prompt 拼接基于完整正文（含 docx 产品参数），而非仅文件名。仅拉候选篇、不拉全部，控制等待时长。 */
+async function ensureTopKbBodies(){
+  var kbs=getKB()||[];
+  if(!kbs.length)return;
+  if(!_cloudReady||!_db)return; // 离线/未连云端：用本地已有正文，topKbDocs 内已做 name+分类降级
+  // 与 buildPrompt 同口径取主题文本（标题+关键词+卖点）
+  var title=$("#g_title")?$("#g_title").value.trim():"";
+  var kw=$("#g_kw")?$("#g_kw").value.trim():"";
+  var sell=$("#g_sell")?$("#g_sell").value.trim():"";
+  var topic=(title+" "+(kw||"")+" "+(sell||"")).trim();
+  if(!topic)return;
+  var cands=topKbDocs(kbs,topic,3);
+  var miss=cands.filter(function(d){return !d.html&&!d.text&&!(typeof d.data==="string"?d.data:null);});
+  if(!miss.length)return;
+  // 串行（_serialFetch 已串行化）小批量拉取，每批 2 篇控流；每篇带 20s 竞速超时兜底，
+  // 因代理对大响应偶发 body 挂死、且 15s abort 未必让 fetch reject，必须 race 超时保证不永久阻塞生成。
+  try{
+    for(var s=0;s<miss.length;s+=2){
+      await Promise.all(miss.slice(s,s+2).map(function(d){
+        return Promise.race([
+          new Promise(function(res){ kbEnsureBody(d.id,function(){res();}); }),
+          new Promise(function(res){ setTimeout(res,20000); })
+        ]);
+      }));
+    }
+  }catch(e){ console.warn("ensureTopKbBodies failed",e); }
 }
 /* 文章训练：每篇范文存为 geo_train 的一个独立行（id=recId，payload=完整范文），与知识库同理脱离单表。 */
 function recMeta(d){ if(!d)return d; var o={}; for(var k in d)o[k]=d[k]; delete o.content; delete o.html; o.preview=(String(d.content||d.html||"")).slice(0,500); o.h=recDocHash(d); return o; }
@@ -1984,8 +2019,18 @@ async function selfCheckArticle(text){
   return out||text;
 }
 async function doGen(){
+  // 生成前按需拉回「候选参考文档」的正文：KB 为懒加载架构（首次只同步元数据，docx 等正文需点开才取），
+  // 先按主题算出 top-3 候选，再把其中正文缺失的文档从云端单篇拉回，保证拼接进 prompt 的是完整正文（含产品参数细节），
+  // 而非只有文件名。已拉回的正文会缓存在本地，后续生成同主题无需再等。
+  await ensureTopKbBodies();
   var info=buildPrompt();
   if(!info.title){toast("请填写主题/产品名");return;}
+  // 若候选参考文档正文均未同步到本地/云端（历史迁移只搬了元数据），提示用户重新上传以让 AI 参考完整内容
+  var refs=topKbDocs(getKB()||[],(info.title+" "+(info.kw||"")),3);
+  var anyBody=refs.some(function(d){return d.html||d.text||(typeof d.data==="string"?d.data:null);});
+  if(refs.length&&!anyBody){
+    toast("提示：参考知识库文档仅同步了文件名、正文未同步，AI 将只能按文件名参考（可能缺少参数细节）。建议到「企业知识库」重新上传这些文档。");
+  }
   setGenLoading(true);
   try{
     var text=await callLLM(info.prompt);
