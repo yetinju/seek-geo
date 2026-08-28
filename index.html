@@ -724,7 +724,7 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
           <h3><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>关于本系统</h3>
           <p class="sub">SeekGeo（GEO 软文工作台）—— 面向 GEO（生成式引擎优化）的一站式内容生产系统。集成「企业画像、企业知识库、文章训练、风格规范、软文库、生成器」六大模块：先沉淀品牌素材与知识，再按八大分类训练范文、提炼专属写作风格，最后一键生成更易被 AI 搜索引擎（ChatGPT / Perplexity / 豆包 / 元宝等）收录与引用的软文。</p>
           <p class="kv">数据本地以浏览器缓存 + IndexedDB 双重留存，并经 Cloudflare 反代同步至 Supabase 云端实现多设备实时共享；离线时自动降级为本地存储，联网后自动续传。企业知识库已升级为 IndexedDB 持久化，刷新与重启浏览器均不会丢失。</p>
-          <p class="kv" style="margin-top:8px;color:#0f766e;font-weight:600">构建版本：2026-08-24 · 多表版（d50a1c9）+ 生成软文前「按需拉回候选参考文档正文」：按主题算 top-3 候选后，将其中正文缺失的文档从云端单篇拉回（字段级 select + 20s 竞速超时兜底，绝不卡死生成），使拼接进 prompt 的是完整正文（含产品参数）而非仅文件名；本地已有正文则直接用、无需联网。注：当前云端知识库正文因历史迁移只存了元数据，「参考文档」暂仅按文件名参考，请到「企业知识库」重新上传这些文档即可恢复完整正文（自动同步）。两端均硬刷新（Ctrl+F5 / 长按刷新选「重新加载」）即可生效。</p>
+          <p class="kv" style="margin-top:8px;color:#0f766e;font-weight:600">构建版本：2026-08-24 · 多表版（d50a1c9）+ ①生成软文前「按需拉回候选参考文档正文」：按主题算 top-3 候选后，将其中正文缺失的文档从云端单篇拉回（字段级 select + 20s 竞速超时兜底，绝不卡死生成），使 prompt 拼接基于完整正文（含产品参数）而非仅文件名；②**修复跨端删除同步**：PC 端删除并重新上传企业知识库/文章训练文档后，手机端不再显示被删旧文档、只显示新上传文档——`fetchKbToLocal`/`fetchTrainToLocal` 已应用墓碑机制（跳过已删文档的拉取、并清理本端残留缓存）。两端均硬刷新（Ctrl+F5 / 长按刷新选「重新加载」）即可生效。</p>
         </div>
 
         <div class="card">
@@ -1262,10 +1262,11 @@ async function fetchKbToLocal(){
     var lr=await _db.from(TBL.kb).select("id");
     if(lr.error)return;
     var cloudIds=(lr.data||[]).map(function(x){return String(x.id);}).filter(Boolean);
+    var tomb=getTomb()||{}; // 墓碑：删除跨端生效，已删除文档在任意端都不应显示
     var local=getKB()||[],localMap={};
     local.forEach(function(d){if(d&&d.id)localMap[d.id]=d;});
-    // 1) 云端有、本地完全没有 → 只拉元数据（name/kind/category/preview 等小字段）
-    var missIds=cloudIds.filter(function(id){return !localMap[id];});
+    // 1) 云端有、本地完全没有 → 只拉元数据（name/kind/category/preview 等小字段）；跳过墓碑标记的已删文档
+    var missIds=cloudIds.filter(function(id){return !localMap[id] && !tomb[id];});
     if(missIds.length){
       for(var s=0;s<missIds.length;s+=40){
         try{
@@ -1282,6 +1283,9 @@ async function fetchKbToLocal(){
       }
       setKB(local);
     }
+    // 1.5) 墓碑清理：本地缓存中若含已删除文档（本端或其他端删的），从本地移除，保证「删除」跨端生效
+    var after=getKB().filter(function(d){return !(d&&d.id&&tomb[d.id]);});
+    if(after.length!==getKB().length){ setKB(after); Object.keys(tomb).forEach(function(id){ if(_kbSynced[id])delete _kbSynced[id]; }); kbSyncPersist(); }
     // 2) 本地已有但指纹不符（正文被截断/变更）→ 小批量取全文补齐（每批2篇，单请求≈2MB 内）
     var staleIds=[];
     local.forEach(function(d){
@@ -1295,6 +1299,7 @@ async function fetchKbToLocal(){
         if(rr.error)continue;
         (rr.data||[]).forEach(function(x){
           if(!x||!x.payload||!x.payload.id)return;
+          if(tomb[x.payload.id])return; // 已删除文档不回填
           var cur=getKB(),doc=x.payload,found=false;
           cur=cur.map(function(y){ if(y&&y.id===doc.id){found=true;var o={};for(var k in doc)o[k]=doc[k];return o;} return y; });
           if(!found)cur.push(doc);
@@ -1397,6 +1402,7 @@ async function fetchTrainToLocal(){
     var lr=await _db.from(TBL.train).select("id");
     if(lr.error)return;
     var cloudIds=(lr.data||[]).map(function(x){return String(x.id);}).filter(Boolean);
+    var tomb=getTomb()||{}; // 墓碑：删除跨端生效，已删除范文在任意端都不应显示
     var local=getTrain()||[],localMap={},need=[];
     local.forEach(function(d){if(d&&d.id)localMap[d.id]=d;});
     local.forEach(function(d){
@@ -1404,30 +1410,32 @@ async function fetchTrainToLocal(){
       var full=!!(d.content||d.html);
       if(!full || (d.h!=null && d.h!==recDocHash(d))) need.push(d.id);
     });
-    cloudIds.forEach(function(id){ if(!localMap[id]&&need.indexOf(id)<0) need.push(id); });
-    if(!need.length)return;
+    cloudIds.forEach(function(id){ if(!localMap[id]&&!tomb[id]&&need.indexOf(id)<0) need.push(id); });
+    if(!need.length&&!Object.keys(tomb).length)return;
     var docs=[];
-    for(var s=0;s<need.length;s+=40){
+    if(need.length)for(var s=0;s<need.length;s+=40){
       try{
         var rr=await _db.from(TBL.train).select("*").in("id",need.slice(s,s+40));
         if(rr.error)continue;
-        (rr.data||[]).forEach(function(x){if(x&&x.payload&&x.payload.id)docs.push(x.payload);});
+        (rr.data||[]).forEach(function(x){if(x&&x.payload&&x.payload.id&&!tomb[x.payload.id])docs.push(x.payload);});
       }catch(e){ console.warn("fetchTrainToLocal batch failed",e); }
     }
-    if(!docs.length)return;
-    // 一次性合并：本地已有→补字段；本地没有→整篇并入
+    if(!docs.length&&!Object.keys(tomb).length)return;
+    // 一次性合并：本地已有→补字段；本地没有→整篇并入；已删除（墓碑）→ 剔除
     var cur=getTrain(),byId={};
     docs.forEach(function(d){byId[d.id]=d;});
     var out=cur.map(function(x){
+      if(x&&x.id&&tomb[x.id])return null; // 墓碑清理：移除本地已删范文
       var c=byId[x&&x.id];if(!c)return x;
       delete byId[x.id];
       var o={};for(var k in x)o[k]=x[k];
       if(!o.content&&c.content)o.content=c.content;if(!o.html&&c.html)o.html=c.html;if(o.h==null&&c.h!=null)o.h=c.h;
       return o;
-    });
+    }).filter(Boolean);
     Object.keys(byId).forEach(function(id){out.push(byId[id]);});
     setTrain(out);
     docs.forEach(function(d){_recSynced[d.id]=recDocHash(d);});
+    Object.keys(tomb).forEach(function(id){ if(_recSynced[id])delete _recSynced[id]; });
     recSyncPersist();
   }catch(e){ console.warn("fetchTrainToLocal failed",e); }
 }
