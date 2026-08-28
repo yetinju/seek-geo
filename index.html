@@ -724,7 +724,7 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
           <h3><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>关于本系统</h3>
           <p class="sub">SeekGeo（GEO 软文工作台）—— 面向 GEO（生成式引擎优化）的一站式内容生产系统。集成「企业画像、企业知识库、文章训练、风格规范、软文库、生成器」六大模块：先沉淀品牌素材与知识，再按八大分类训练范文、提炼专属写作风格，最后一键生成更易被 AI 搜索引擎（ChatGPT / Perplexity / 豆包 / 元宝等）收录与引用的软文。</p>
           <p class="kv">数据本地以浏览器缓存 + IndexedDB 双重留存，并经 Cloudflare 反代同步至 Supabase 云端实现多设备实时共享；离线时自动降级为本地存储，联网后自动续传。企业知识库已升级为 IndexedDB 持久化，刷新与重启浏览器均不会丢失。</p>
-          <p class="kv" style="margin-top:8px;color:#0f766e;font-weight:600">构建版本：2026-08-24 · 多表版（f21c9d3）+ 软文库/企业知识库/文章训练模块移除「全部」分类入口，默认直接展示并激活首个真实分类（软文库·训练：实测/评测报告；知识库：公司信息），避免空分类干扰；风格规范原本即按分类展示。两端均硬刷新（Ctrl+F5 / 长按刷新选「重新加载」）即可生效。</p>
+          <p class="kv" style="margin-top:8px;color:#0f766e;font-weight:600">构建版本：2026-08-24 · 多表版（a94f5e1）+ 修复「软文质检参考知识库文档名 PC/手机端不一致」：① 生成软文时即将按主题算出的最相关知识库文档 id 固化进文章 kbRefId（不再每次实时重算）；② topKbDoc 在正文懒加载未到位时退化为仅按文件名打分，避免两端同步时机不同导致最相关文档漂移；③ 存量软文打开质检时自动自愈补写 kbRefId，保证各端显示一致。两端均硬刷新（Ctrl+F5 / 长按刷新选「重新加载」）即可生效。</p>
         </div>
 
         <div class="card">
@@ -1855,7 +1855,11 @@ function topKbDoc(kbs,text){
   var artSet={};tokWords(text).forEach(function(t){if(t.length>=2||/^[一-龥]$/.test(t))artSet[t]=1;});
   var best=null,bestScore=-1;
   (kbs||[]).forEach(function(d){
-    var txt=(d.name||"")+"\n"+(d.kind==="text"?(d.text||""):(d.data?"":""));
+    // 正文（text/data）可能尚未从云端懒加载到位；此时只用文件名(name)参与打分，
+    // 避免「本端正文未加载 → 该文档得分骤降 → 最相关文档在不同步时机漂移」导致 PC/手机端参考文档名不一致。
+    // （docx 等二进制文档本就无纯文本正文，历来只靠文件名匹配，与此口径统一）
+    var hasBody=!!(d.text||d.data);
+    var txt=hasBody?(d.name||"")+"\n"+(d.kind==="text"?(d.text||""):(d.data?"":"")):(d.name||"");
     var toks=tokWords(txt),score=0,seen={};
     toks.forEach(function(t){if((t.length>=2||/^[一-龥]$/.test(t))&&artSet[t]&&!seen[t]){score++;seen[t]=1;}});
     if(score>bestScore){bestScore=score;best=d;}
@@ -1912,6 +1916,12 @@ function buildPrompt(){
   var kbs=getKB()||[];
   var refDoc=topKbDoc(kbs,(title+" "+(kw||"")+" "+(sell||"")));
   var kbRefId=refDoc?refDoc.id:null;
+  if(!kbRefId){
+    // 未手动指定参考文档时，按主题（标题+关键词）取最相关 1 篇知识库文档，并将其 id 固化进 kbRefId，
+    // 避免生成后各端在不同步时机/不同缓存状态下实时重算 topKbDoc 导致「参考文档名」漂移（PC/手机显示不一致）。
+    var topByTopic=topKbDoc(kbs,(title||"")+" "+(kw||""));
+    if(topByTopic)kbRefId=topByTopic.id;
+  }
   if(kbs.length){
     p+="\n【企业知识库参考】（请从中提取与主题相关的产品参数、技术事实、行业依据，确保文中数据与事实有出处、可验证）\n";
     if(refDoc){
@@ -2088,6 +2098,8 @@ function renderQcKbBar(r){
   var kbs=getKB()||[];
   var refDoc=r.kbRefId?kbs.filter(function(d){return d.id===r.kbRefId;})[0]:null;
   if(!refDoc)refDoc=topKbDoc(kbs,r.content);
+  // 自愈：未固化 kbRefId 的存量软文，本次算出最相关文档后持久化，保证各端显示一致
+  if(refDoc&&r.kbRefId!==refDoc.id){r.kbRefId=refDoc.id;setRecords(getRecords().map(function(x){return x.id===r.id?r:x;}));}
   bar.style.display="block";
   if(refDoc){info.textContent=refDoc.name||"未命名";info.className="qc-kb-info";}
   else if(kbs.length){info.textContent="全部文档（共 "+kbs.length+" 篇，未命中单篇，已按整体比对）";info.className="qc-kb-info";}
@@ -2114,7 +2126,12 @@ function doQc(){
       modeNote="已指定参考文档《"+(refDoc.name||"")+"》进行质检";
     }else{
       var topDoc=topKbDoc(kbs,r.content);
-      if(topDoc){used=[topDoc];trimmed=kbs.length>1;modeNote="已按主题相关性筛选最相关的 1 篇知识库文档进行质检（共 "+kbs.length+" 篇）";}
+      if(topDoc){
+        used=[topDoc];trimmed=kbs.length>1;modeNote="已按主题相关性筛选最相关的 1 篇知识库文档进行质检（共 "+kbs.length+" 篇）";
+        // 自愈：存量软文未固化 kbRefId 时，本次算出的最相关文档 id 持久化回文章，
+        // 避免两端/不同时机因同步状态差异重复重算导致参考文档名漂移。
+        if(topDoc.id&&r.kbRefId!==topDoc.id){r.kbRefId=topDoc.id;setRecords(getRecords().map(function(x){return x.id===r.id?r:x;}));}
+      }
       else{used=kbs;} // 完全无共现词则回退全部，保证不漏检
     }
     if(!used.length){toast("所选知识库文档不存在");setQcLoading(false);return;}
