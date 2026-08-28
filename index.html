@@ -1095,9 +1095,12 @@ async function initCloud(){
         seedIfEmpty();await syncToCloud({silent:true});setSync("实时同步 ☁","#a7f3d0");
       }
     }
-    // 关键修复：连接建立后，无条件把本地（可能在“云端未就绪”竞态期间产生的）KB/文章训练/软文等补推一次。
-    // 此前 has===true 分支不调 syncToCloud，导致“页面刚打开、云端尚在连接时就上传的文档”只留本地、云端永远为空，手机端看不见。
-    // syncKbToCloud/syncTrainToCloud 按文档指纹去重，已同步的会跳过，不会重复写。
+    // 关键修复：连接建立后，把本地 KB/文章训练/软文等补推到云端。
+    // 1) 先清空 KB/训练的指纹(_kbSynced/_recSynced)，强制对“本地存在但云端为空/指纹误判未上云”的文档全量重推，
+    //    彻底解决「页面刚打开、云端未就绪时上传的文档只留本地」「或云端曾被清空但本地指纹仍在导致永不重推」让手机端看不见的问题。
+    // 2) 软文/画像/规范走 syncColl 通用集合（无指纹卡顿），随 syncToCloud 一并补推。
+    // 本地已删除的文档仍由 syncKbToCloud/syncTrainToCloud 的 toDel 分支按墓碑/云端独有清理，不会被错误加回。
+    _kbSynced={}; _recSynced={};
     await syncToCloud({silent:true});
     // 轮询拉取（跨设备同步）：改为 30s 一次，并配合 pullLoop 内「先查 updated_at 再按需拉全量」的轻量探测，
     // 相较原先 2.5s 全量轮询，环境调用次数与读流量均下降约 12 倍；同浏览器多标签仍由 BroadcastChannel 瞬时同步，不受影响。
