@@ -727,7 +727,7 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
           <h3><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>关于本系统</h3>
           <p class="sub">SeekGeo（GEO 软文工作台）—— 面向 GEO（生成式引擎优化）的一站式内容生产系统。集成「企业画像、企业知识库、文章训练、风格规范、软文库、生成器」六大模块：先沉淀品牌素材与知识，再按八大分类训练范文、提炼专属写作风格，最后一键生成更易被 AI 搜索引擎（ChatGPT / Perplexity / 豆包 / 元宝等）收录与引用的软文。</p>
           <p class="kv">数据本地以浏览器缓存 + IndexedDB 双重留存，并经 Cloudflare 反代同步至 Supabase 云端实现多设备实时共享；离线时自动降级为本地存储，联网后自动续传。企业知识库已升级为 IndexedDB 持久化，刷新与重启浏览器均不会丢失。</p>
-          <p class="kv" style="margin-top:8px;color:#0f766e;font-weight:600">构建版本：2026-08-24 · 多表版（d685219）+ 修复「企业知识库/文章训练」手机端看不到：连接云端后清空同步指纹并强制全量重推本地文档（修复旧指纹误判“已同步”导致永不重推的卡死），PC 重新打开即把文档推上云端，手机端硬刷新即可看到；质检查询记录随云端多端同步。</p>
+          <p class="kv" style="margin-top:8px;color:#0f766e;font-weight:600">构建版本：2026-08-24 · 多表版（e73a402）+ 修复「企业知识库/文章训练」手机端看不到的深层原因：① 首次同步不再请求 7MB 大字段（该响应经代理会 body 挂死、卡死整条同步链路），改为「知识库先拉轻量元数据、点开文档时再单篇加载全文；训练按 40 篇/批批量拉取」；② 修复懒加载完成后查看窗口不刷新的回调参数 bug；③ 同步期间列表显示「正在从云端同步」而非「还是空的」；④ 旧表 geo_store 数据自动搬移到新表（带 20s 超时兜底）。两端均硬刷新（Ctrl+F5 / 长按刷新选「重新加载」）即可生效。</p>
         </div>
 
         <div class="card">
@@ -1035,6 +1035,7 @@ async function loadFromCloud(){
       if(cp.seeded)lsSet("seeded",true);
       if(cp.qc_logs)setQcLogs(cp.qc_logs); // 质检查询跨端同步（复用 geo_cfg 信号）
       _lastCfgTs=c.data.updated_at;
+      await syncLegacyStore();        // 旧表(geo_store，旧版客户端写入)→新表搬移：补齐新表缺失条目，KB/训练跨端可见的关键
       await applyColl(TBL.records,getRecords,setRecords);
       await applyColl(TBL.ents,getEnts,setEnts);
       await applyColl(TBL.specs,getSpecs,setSpecs);
@@ -1067,6 +1068,7 @@ function cloudErrHint(e){
 }
 async function initCloud(){
   if(_initRetryTimer){clearInterval(_initRetryTimer);_initRetryTimer=null;}
+  _cloudLoading=true; try{refreshAll();}catch(e){} // 同步进行中：知识库/训练列表空态改为「正在同步」提示，避免误导用户以为数据丢了
   setSync("连接云端…","#fbbf24");
   try{
     if(typeof supabase==="undefined"||!supabase.createClient)throw new Error("Supabase SDK 未加载，请检查网络后刷新页面");
@@ -1117,11 +1119,13 @@ async function initCloud(){
     });
     // 窗口重新获得焦点也立即拉取一次（覆盖桌面端切回）
     window.addEventListener("focus",function(){ if(_cloudReady) pullLoop(); });
+    _cloudLoading=false; try{refreshAll();}catch(e){} // 首次同步完成：用云端数据重渲染（含 KB/训练列表）
   }catch(e){
     console.error("initCloud failed, offline local-only",e);
     _cloudLastErr=cloudErrHint(e);
     _cloudStopped=/res_stopped|套餐过期|欠费|资源用尽|资源已停止/i.test(String(e&&(e.message||e)));
     _cloudReady=false;
+    _cloudLoading=false; try{refreshAll();}catch(e2){} // 失败也要解除「正在同步」空态提示
     setSync(_cloudStopped?"云端已停用":"离线·本地","#cbd5e1");
     // 匿名会话可能过期或临时无网络：每 30s 自动重试（不再 8s 锤击），恢复后立刻接管同步
     _initRetryTimer=setInterval(function(){
@@ -1142,12 +1146,15 @@ async function pullLoop(){
   if(!_cloudReady||_syncing)return;
   _syncing=true;
   try{
+    // 旧表（旧版客户端在写）搬移必须先于 cfg 短路判断：旧版写旧表不会顶 geo_cfg.updated_at，
+    // 若放在“cfg 未变即 return”之后，PC 旧版的上传将永远无法被新版端感知。
+    var legacyMoved=await syncLegacyStore();
     // 轻量探测：只查 geo_cfg 的 updated_at（全局变更信号），内容未变则跳过整包拉取，显著降低读调用与带宽
     var head=await _db.from(TBL.cfg).select("updated_at").eq("id","default").maybeSingle();
     if(head.error){ _cloudReady=false; markCloudDead("pull error: "+(head.error&&head.error.message||head.error)); return; }
-    if(!head.data){ _lastCfgTs=null; return; } // 云端尚无配置行
-    if(_lastCfgTs && head.data.updated_at===_lastCfgTs) return; // 内容未变，跳过
-    _lastCfgTs=head.data.updated_at; // 先锚定时间戳，避免「时间戳变而内容同」时下一轮重复拉取
+    if(!head.data){ _lastCfgTs=null; if(!legacyMoved)return; } // 云端尚无配置行（且旧表也无搬移）则跳过
+    if(_lastCfgTs && head.data && head.data.updated_at===_lastCfgTs && !legacyMoved) return; // 内容未变且旧表无搬移，跳过
+    if(head.data)_lastCfgTs=head.data.updated_at; // 先锚定时间戳，避免「时间戳变而内容同」时下一轮重复拉取
     await pullTomb();
     var c2=await _db.from(TBL.cfg).select("payload").eq("id","default").maybeSingle();
     if(c2&&c2.data&&c2.data.payload){
@@ -1213,6 +1220,7 @@ function seedIfEmpty(){
 function getEnts(){return lsGet("ent",[]);}
 function setEnts(e){lsSet("ent",e);}
 var _kbMem=lsGet("kbl",[])||[]; // 知识库完整内容驻留内存（云端为唯一真相源）；localStorage 仅持久化轻量元数据，规避微信端 localStorage 配额（约5MB）超限导致清理缓存后无法恢复
+var _cloudLoading=false; // 首次云端同步进行中标志：列表空态据此显示「正在同步」而非「还是空的」
 function stripKbHeavy(d){if(!d)return d;var MAX=1*1024*1024;function trim(s){return (typeof s==="string"&&s.length>MAX)?s.slice(0,MAX):s;}return {id:d.id,name:d.name,type:d.type||"",size:d.size||0,uploadedAt:d.uploadedAt||"",category:d.category||"",kind:d.kind||"",preview:(d.text||"").slice(0,500),html:trim(d.html),text:trim(d.text),data:(typeof d.data==="string"&&d.data.length>MAX)?null:d.data};} // 端侧持久化完整 html/text/data(单文档≤1MB，超出仍只存预览)，避免未联网/同步失败时刷新丢内容；云端仍为主同步源
 function fillKbFromCloud(localArr,cloudArr){ // 用 cloud/import 源的完整 html/text/data 补全 local 缺失的重字段（仅补缺，不覆盖已有）。推送云端与从云端/导入回填共用，避免轻量元数据丢失完整内容。
   if(!Array.isArray(cloudArr)||!cloudArr.length)return localArr||[];
@@ -1230,6 +1238,10 @@ async function syncKbToCloud(){
   var changed=false;
   for(var i=0;i<local.length;i++){
     var d=local[i];if(!d||!d.id)continue;
+    // 仅元数据的文档（首次同步只取了元数据、正文尚未懒加载）不推送：
+    // 避免用「空正文行」覆盖云端完整版（此前手机端会把元数据行 upsert 回云端毁掉全文）
+    var hasBody=!!(d.html||d.text||(typeof d.data==="string"?d.data:null));
+    if(!hasBody)continue;
     var h=kbDocHash(d);
     if(_kbSynced[d.id]!==h){
       try{ await upsertRow(TBL.kb,d.id,d); _kbSynced[d.id]=h; changed=true; }
@@ -1244,37 +1256,77 @@ async function syncKbToCloud(){
   if(changed)kbSyncPersist();
   return changed;
 }
-/* 拉取知识库：仅列出云端 id（返回极小），只取回本地缺失/指纹不符/云端独有 的篇，不整包搬运。 */
+/* 拉取知识库：首次只取轻量元数据（字段级 select，列表秒开、流量 KB 级），
+   正文在 viewKb 打开时懒加载单篇；本地已有但指纹不符的按小批量(2篇/批)取全文，
+   避免一次拉多篇 MB 级 html 响应触发 15s 串行超时（手机端"看不到"的性能根因）。 */
 async function fetchKbToLocal(){
   if(!_cloudReady||!_db)return;
   try{
     var lr=await _db.from(TBL.kb).select("id");
     if(lr.error)return;
     var cloudIds=(lr.data||[]).map(function(x){return String(x.id);}).filter(Boolean);
-    var local=getKB()||[],localMap={},need={};
+    var local=getKB()||[],localMap={};
     local.forEach(function(d){if(d&&d.id)localMap[d.id]=d;});
+    // 1) 云端有、本地完全没有 → 只拉元数据（name/kind/category/preview 等小字段）
+    var missIds=cloudIds.filter(function(id){return !localMap[id];});
+    if(missIds.length){
+      for(var s=0;s<missIds.length;s+=40){
+        try{
+          var mr=await _db.from(TBL.kb).select("id,payload->id,payload->name,payload->kind,payload->category,payload->size,payload->type,payload->uploadedAt,payload->preview").in("id",missIds.slice(s,s+40));
+          if(mr.error)continue;
+          (mr.data||[]).forEach(function(row){
+            var m=row.payload||row;
+            if(!m||!m.id)return;
+            localMap[m.id]=m;
+            local.push(m);
+            _kbSynced[m.id]=kbDocHash(m); // 元数据指纹=空正文哈希，可防「元数据被推回云端覆盖完整版」
+          });
+        }catch(e){ console.warn("fetchKbToLocal meta batch failed",e); }
+      }
+      setKB(local);
+    }
+    // 2) 本地已有但指纹不符（正文被截断/变更）→ 小批量取全文补齐（每批2篇，单请求≈2MB 内）
+    var staleIds=[];
     local.forEach(function(d){
       if(!d||!d.id)return;
       var full=!!(d.html||d.text||(typeof d.data==="string"?d.data:JSON.stringify(d.data||"")));
-      if(!full || (d.h!=null && d.h!==kbDocHash(d))) need[d.id]=1;
+      if(full && d.h!=null && d.h!==kbDocHash(d)) staleIds.push(d.id);
     });
-    // 3) 云端有、本地完全没有的文档（新设备首次同步）
-    cloudIds.forEach(function(id){ if(!localMap[id]) need[id]=1; });
-    var ids=Object.keys(need); if(!ids.length)return;
-    // 4) 逐篇直取（而非整包搬运），仅传输真正需要的那几篇
-    var changed=false;
-    for(var i=0;i<ids.length;i++){
+    for(var t=0;t<staleIds.length;t+=2){
       try{
-        var rr=await _db.from(TBL.kb).select("*").eq("id",ids[i]).maybeSingle();
-        if(rr.error||!rr.data||!rr.data.payload)continue;
-        var doc=rr.data.payload;
-        setKB(fillKbFromCloud(getKB(),[doc])); // 仅补缺重字段，不覆盖本地已有完整内容
-        _kbSynced[doc.id]=kbDocHash(doc);
-        changed=true;
-      }catch(e){ console.warn("fetchKbToLocal single failed",e); }
+        var rr=await _db.from(TBL.kb).select("*").in("id",staleIds.slice(t,t+2));
+        if(rr.error)continue;
+        (rr.data||[]).forEach(function(x){
+          if(!x||!x.payload||!x.payload.id)return;
+          var cur=getKB(),doc=x.payload,found=false;
+          cur=cur.map(function(y){ if(y&&y.id===doc.id){found=true;var o={};for(var k in doc)o[k]=doc[k];return o;} return y; });
+          if(!found)cur.push(doc);
+          setKB(cur);
+          _kbSynced[doc.id]=kbDocHash(doc);
+        });
+      }catch(e){ console.warn("fetchKbToLocal full batch failed",e); }
     }
-    if(changed)kbSyncPersist();
+    kbSyncPersist();
   }catch(e){ console.warn("fetchKbToLocal failed",e); }
+}
+/* 懒加载：打开 KB 文档时若正文缺失（首次同步只取了元数据），单篇拉取全文并缓存。
+   注意：cb 约定传回文档 id（viewKb(id) 以 id 索引），绝不能传 doc 对象——曾因此导致回调重渲染静默失效 */
+async function kbEnsureBody(id,cb){
+  var r=getKB().filter(function(x){return x.id===id;})[0];
+  if(!r){cb&&cb(id);return;}
+  var hasBody=!!(r.html||r.text||(typeof r.data==="string"?r.data:null));
+  if(hasBody||!_cloudReady||!_db){cb&&cb(id);return;}
+  try{
+    var rr=await _db.from(TBL.kb).select("*").eq("id",id).maybeSingle();
+    if(rr.data&&rr.data.payload){
+      var doc=rr.data.payload,cur=getKB();
+      cur=cur.map(function(y){ return (y&&y.id===doc.id)?doc:y; });
+      setKB(cur);
+      _kbSynced[doc.id]=kbDocHash(doc);kbSyncPersist();
+      cb&&cb(id);return;
+    }
+  }catch(e){ console.warn("kbEnsureBody failed",e); }
+  cb&&cb(id);
 }
 /* 文章训练：每篇范文存为 geo_train 的一个独立行（id=recId，payload=完整范文），与知识库同理脱离单表。 */
 function recMeta(d){ if(!d)return d; var o={}; for(var k in d)o[k]=d[k]; delete o.content; delete o.html; o.preview=(String(d.content||d.html||"")).slice(0,500); o.h=recDocHash(d); return o; }
@@ -1306,35 +1358,159 @@ async function syncTrainToCloud(){
   if(changed)recSyncPersist();
   return changed;
 }
-/* 拉取文章训练：仅列出云端 id（返回极小），只取回本地缺失/指纹不符/云端独有 的篇，不整包搬运。 */
+/* 拉取文章训练：仅列出云端 id（返回极小），批量(.in)取回缺失/指纹不符/云端独有 的篇，一次性合并写入。 */
 async function fetchTrainToLocal(){
   if(!_cloudReady||!_db)return;
   try{
     var lr=await _db.from(TBL.train).select("id");
     if(lr.error)return;
     var cloudIds=(lr.data||[]).map(function(x){return String(x.id);}).filter(Boolean);
-    var local=getTrain()||[],localMap={},need={};
+    var local=getTrain()||[],localMap={},need=[];
     local.forEach(function(d){if(d&&d.id)localMap[d.id]=d;});
     local.forEach(function(d){
       if(!d||!d.id)return;
       var full=!!(d.content||d.html);
-      if(!full || (d.h!=null && d.h!==recDocHash(d))) need[d.id]=1;
+      if(!full || (d.h!=null && d.h!==recDocHash(d))) need.push(d.id);
     });
-    cloudIds.forEach(function(id){ if(!localMap[id]) need[id]=1; });
-    var ids=Object.keys(need); if(!ids.length)return;
-    var changed=false;
-    for(var i=0;i<ids.length;i++){
+    cloudIds.forEach(function(id){ if(!localMap[id]&&need.indexOf(id)<0) need.push(id); });
+    if(!need.length)return;
+    var docs=[];
+    for(var s=0;s<need.length;s+=40){
       try{
-        var rr=await _db.from(TBL.train).select("*").eq("id",ids[i]).maybeSingle();
-        if(rr.error||!rr.data||!rr.data.payload)continue;
-        var doc=rr.data.payload;
-        setTrain(fillRecFromCloud(getTrain(),[doc])); // 仅补缺重字段，不覆盖本地已有完整内容
-        _recSynced[doc.id]=recDocHash(doc);
-        changed=true;
-      }catch(e){ console.warn("fetchTrainToLocal single failed",e); }
+        var rr=await _db.from(TBL.train).select("*").in("id",need.slice(s,s+40));
+        if(rr.error)continue;
+        (rr.data||[]).forEach(function(x){if(x&&x.payload&&x.payload.id)docs.push(x.payload);});
+      }catch(e){ console.warn("fetchTrainToLocal batch failed",e); }
     }
-    if(changed)recSyncPersist();
+    if(!docs.length)return;
+    // 一次性合并：本地已有→补字段；本地没有→整篇并入
+    var cur=getTrain(),byId={};
+    docs.forEach(function(d){byId[d.id]=d;});
+    var out=cur.map(function(x){
+      var c=byId[x&&x.id];if(!c)return x;
+      delete byId[x.id];
+      var o={};for(var k in x)o[k]=x[k];
+      if(!o.content&&c.content)o.content=c.content;if(!o.html&&c.html)o.html=c.html;if(o.h==null&&c.h!=null)o.h=c.h;
+      return o;
+    });
+    Object.keys(byId).forEach(function(id){out.push(byId[id]);});
+    setTrain(out);
+    docs.forEach(function(d){_recSynced[d.id]=recDocHash(d);});
+    recSyncPersist();
   }catch(e){ console.warn("fetchTrainToLocal failed",e); }
+}
+/* ===== 旧单表(geo_store) → 新多表 自动搬移 =====
+   背景：PC 端浏览器若缓存了旧版（单表版）页面，其上传/修改会继续写旧表 geo_store，
+   而新版端只读写新表（geo_kb/geo_train/...），导致两端数据分裂（手机端看不到 PC 上传的文档）。
+   策略：以旧表 default 行 updated_at 为变化信号；有变化时按「字段级选择」分多次拉小数据
+   （payload->train / payload->records 等单字段，避免一次拉 7MB+ 全量 payload 触发 15s 串行超时），
+   把旧表中「新表缺失的条目」搬到新表（只补缺、不覆盖，新表仍是真相源）。 */
+var _legacyMigAt=lsGet("legacy_mig_at","");
+async function syncLegacyStore(){
+  if(!_cloudReady||!_db)return false;
+  try{
+    var d=await _db.from("geo_store").select("updated_at").eq("id","default").maybeSingle();
+    if(d.error||!d.data)return false;          // 旧表不存在（全新环境）→ 跳过
+    var at=d.data.updated_at||"";
+    if(!at||at===_legacyMigAt)return false;    // 旧表无变化 → 跳过（30s 轮询仅付出一次轻量探测）
+    // 字段级取值：单字段小响应，避免整包 7MB+ 大 payload 超时。
+    // 注：大响应（>2MB）经 Cloudflare 代理可能出现「响应头 200 但 body 永久挂死」，
+    // 故必须加 20s 竞速超时兜底，防止单个字段把整条 loadFromCloud 链路卡死。
+    async function legacyField(f){
+      try{
+        var p=_db.from("geo_store").select("payload->"+f).eq("id","default").maybeSingle();
+        var r=await Promise.race([p,new Promise(function(_,rej){setTimeout(function(){rej(new Error("legacyField timeout:"+f));},20000);})]);
+        if(r.error||!r.data)return null;
+        return r.data[f]!==undefined?r.data[f]:(r.data.payload&&r.data.payload[f]);
+      }catch(e){ return null; }
+    }
+    // 1) 知识库：旧表 kb: 独立行（含完整正文）。先轻查 id，只拉「新表缺失」的行
+    try{
+      var kr=await _db.from("geo_store").select("id").like("id","kb:%");
+      if(!kr.error&&kr.data&&kr.data.length){
+        var haveKb={};
+        var nr=await _db.from(TBL.kb).select("id");
+        (nr.data||[]).forEach(function(x){haveKb[x.id]=1;});
+        var miss=[];
+        kr.data.forEach(function(row){
+          var did=String(row.id||"").replace(/^kb:/,"");
+          if(did&&!haveKb[did])miss.push(did);
+        });
+        for(var i=0;i<miss.length;i++){
+          try{
+            var fr=await _db.from("geo_store").select("payload").eq("id","kb:"+miss[i]).maybeSingle();
+            var doc=fr.data&&fr.data.payload&&fr.data.payload.doc;
+            if(doc&&doc.id){await upsertRow(TBL.kb,doc.id,doc);}
+          }catch(e){}
+        }
+      }
+    }catch(e){console.warn("legacy kb migrate",e);}
+    // 2) 文章训练：旧表 default.payload.train（字段级，≈0.4MB）
+    try{
+      var trains=await legacyField("train");
+      if(Array.isArray(trains)&&trains.length){
+        var tr=await _db.from(TBL.train).select("id");
+        var haveTr={};
+        (tr.data||[]).forEach(function(x){haveTr[x.id]=1;});
+        for(var b=0;b<trains.length;b++){
+          if(trains[b]&&trains[b].id&&!haveTr[trains[b].id]){try{await upsertRow(TBL.train,trains[b].id,trains[b]);}catch(e){}}
+        }
+      }
+    }catch(e){console.warn("legacy train migrate",e);}
+    // 3) 软文：旧表 rec: 独立行 + default.payload.records（字段级）
+    try{
+      var haveRec={};
+      var nr2=await _db.from(TBL.records).select("id");
+      (nr2.data||[]).forEach(function(x){haveRec[x.id]=1;});
+      var rr=await _db.from("geo_store").select("id").like("id","rec:%");
+      if(!rr.error&&rr.data){
+        for(var c=0;c<rr.data.length;c++){
+          var rid=String(rr.data[c].id||"").replace(/^rec:/,"");
+          if(rid&&!haveRec[rid]){
+            try{
+              var fr2=await _db.from("geo_store").select("payload").eq("id","rec:"+rid).maybeSingle();
+              var o=fr2.data&&fr2.data.payload;
+              if(o&&o.id){await upsertRow(TBL.records,o.id,o);haveRec[o.id]=1;}
+            }catch(e){}
+          }
+        }
+      }
+      var pr=await legacyField("records");
+      if(Array.isArray(pr)){
+        for(var e2=0;e2<pr.length;e2++){
+          if(pr[e2]&&pr[e2].id&&!haveRec[pr[e2].id]){try{await upsertRow(TBL.records,pr[e2].id,pr[e2]);}catch(e){}}
+        }
+      }
+    }catch(e){console.warn("legacy records migrate",e);}
+    // 4) 企业画像 / 风格规范 / KB元数据数组（均字段级小响应）
+    try{
+      var pe=await legacyField("ent");
+      var peArr=Array.isArray(pe)?pe:(pe&&pe.id?[pe]:[]);
+      if(peArr.length){
+        var er=await _db.from(TBL.ents).select("id");
+        var haveEnt={};
+        (er.data||[]).forEach(function(x){haveEnt[x.id]=1;});
+        for(var f=0;f<peArr.length;f++){
+          if(peArr[f]&&peArr[f].id&&!haveEnt[peArr[f].id]){try{await upsertRow(TBL.ents,peArr[f].id,peArr[f]);}catch(e){}}
+        }
+      }
+    }catch(e){console.warn("legacy ents migrate",e);}
+    try{
+      var ps=await legacyField("specs");
+      if(Array.isArray(ps)&&ps.length){
+        var sr=await _db.from(TBL.specs).select("id");
+        var haveSpec={};
+        (sr.data||[]).forEach(function(x){haveSpec[x.id]=1;});
+        for(var g=0;g<ps.length;g++){
+          if(ps[g]&&ps[g].id&&!haveSpec[ps[g].id]){try{await upsertRow(TBL.specs,ps[g].id,ps[g]);}catch(e){}}
+        }
+      }
+    }catch(e){console.warn("legacy specs migrate",e);}
+    // 注意：不搬 default.payload.kb 元数据数组——该字段实测约 7MB（stripKbHeavy 仍保留每篇≤1MB 正文），
+    // 大响应经代理会 body 挂死卡死整条链路；而 kb: 独立行（上面步骤1）才是含完整正文的权威源，已覆盖。
+    _legacyMigAt=at; lsSet("legacy_mig_at",_legacyMigAt);
+    return true;
+  }catch(e){ console.warn("syncLegacyStore failed",e); return false; }
 }
 function getKB(){return _kbMem;}
 function setKB(a){_kbMem=a||[];
@@ -2330,7 +2506,7 @@ function renderKb(){
   });
   var list=kbCat?all.filter(function(r){return r.category===kbCat;}):all;
   var box=$("#kbList");
-  if(!all.length){box.innerHTML='<div class="empty-state">知识库还是空的，先上传一些企业资料吧～</div>';return;}
+  if(!all.length){box.innerHTML='<div class="empty-state">'+(_cloudLoading?'⏳ 正在从云端同步企业知识库文档…<br><span class="sub">首次同步需加载文档列表，视网络情况约需 10~30 秒，请勿关闭页面</span>':'知识库还是空的，先上传一些企业资料吧～')+'</div>';return;}
   if(!list.length){box.innerHTML='<div class="empty-state">「'+(kbCat||"")+'」分类下还没有文档，去上方上传时选择该分类即可。</div>';return;}
   var total=list.length;
   kbPage=Math.min(Math.max(1,kbPage),Math.max(1,Math.ceil(total/PAGE_SIZE)));
@@ -2354,13 +2530,16 @@ function renderKb(){
 function viewKb(id){
   var r=getKB().filter(function(x){return x.id===id;})[0];if(!r)return;
   var sheet=$("#sheet");
+  var hasBody=!!(r.html||r.text||(typeof r.data==="string"?r.data:null));
+  // 正文缺失（首次同步只取了元数据）→ 云端单篇懒加载后再渲染
+  if(!hasBody){ kbEnsureBody(id,viewKb); }
   if(r.kind==="html"){
     if(r.html){
       sheet.innerHTML='<h3>'+esc(r.name)+' <button class="x" data-x>×</button></h3>'+
         '<div class="kb-view kb-rich">'+r.html+'</div>';
     }else{
       sheet.innerHTML='<h3>'+esc(r.name)+' <button class="x" data-x>×</button></h3>'+
-        '<p class="sub">完整内容需联网加载，以下是离线预览：</p><div class="kb-view">'+esc(r.preview||"(无预览)")+'</div>';
+        '<p class="sub">⏳ 正在从云端加载正文…</p><div class="kb-view">'+(r.preview?esc(r.preview):'<p class="sub">文档较大，加载完成后将自动显示完整正文，请稍候</p>')+'</div>';
     }
   }else if(r.kind==="text"){
     sheet.innerHTML='<h3>'+esc(r.name)+' <button class="x" data-x>×</button></h3>'+
@@ -2373,7 +2552,7 @@ function viewKb(id){
         '<div class="btn-row"><a class="btn" href="'+url+'" target="_blank" rel="noopener">在新标签打开</a><a class="btn ghost" href="'+url+'" download="'+esc(r.name)+'">下载</a></div>';
     }else{
       sheet.innerHTML='<h3>'+esc(r.name)+' <button class="x" data-x>×</button></h3>'+
-        '<p class="sub">该文件需联网后查看完整内容。</p>';
+        '<p class="sub">'+(hasBody?'该文件需联网后查看完整内容。':'内容加载中…若长时间无响应，请检查网络后再试。')+'</p>';
     }
   }
   sheet.classList.add("sheet-wide");
@@ -2432,7 +2611,7 @@ function renderTrain(){
   });
   var list=all.filter(function(x){return !trainCat || (x.category||"未分类")===trainCat;});
   var box=$("#trainList");
-  if(!list.length){box.innerHTML='<div class="empty-state">'+(trainCat?('「'+trainCat+'」分类下还没有训练范文，去上方上传时选择该分类即可。'):'还没有训练范文。点击上方「选择文件」可一次上传多篇 (.txt / .md / .docx)，自动加入下方列表。')+'</div>';return;}
+  if(!list.length){box.innerHTML='<div class="empty-state">'+(trainCat?('「'+trainCat+'」分类下还没有训练范文，去上方上传时选择该分类即可。'):(_cloudLoading?'⏳ 正在从云端同步训练范文…<br><span class="sub">首次同步视网络情况约需 10~30 秒，请勿关闭页面</span>':'还没有训练范文。点击上方「选择文件」可一次上传多篇 (.txt / .md / .docx)，自动加入下方列表。'))+'</div>';return;}
   var total=list.length;
   trainPage=Math.min(Math.max(1,trainPage),Math.max(1,Math.ceil(total/PAGE_SIZE)));
   var pageItems=list.slice((trainPage-1)*PAGE_SIZE, trainPage*PAGE_SIZE);
