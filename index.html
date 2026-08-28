@@ -565,7 +565,6 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
           <input id="libSearch" placeholder="搜索标题/关键词" style="flex:0 1 440px;min-width:140px;max-width:480px">
         </div>
         <div class="kb-filters" id="libFilters">
-          <button class="chip-f active" data-cat="">全部</button>
           <button class="chip-f" data-cat="实测/评测报告">实测/评测报告</button>
           <button class="chip-f" data-cat="避坑/风险警示">避坑/风险警示</button>
           <button class="chip-f" data-cat="选型/采购指南">选型/采购指南</button>
@@ -600,7 +599,6 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
           <div class="note">📄 文本类（txt / md / csv / json）保存原文；📝 Word（docx）提取文字内容，若含图片则内嵌图片一起预览，均可直接在「查看」里阅读。🗎 图片 / PDF / Excel 等以原始文件保存，查看时在新标签打开。所有内容以 <b>IndexedDB 本地持久化</b>并经 Cloudflare 反代<b>同步至 Supabase 云端</b>，多设备共享；当前为匿名共享工作区，请勿上传机密或敏感文件。</div>
         </div>
         <div class="kb-filters" id="kbFilters">
-          <button class="chip-f active" data-cat="">全部</button>
           <button class="chip-f" data-cat="公司信息">公司信息</button>
           <button class="chip-f" data-cat="产品介绍">产品介绍</button>
           <button class="chip-f" data-cat="产品信息">产品信息</button>
@@ -629,7 +627,6 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
           <button class="btn danger sm" id="trainSelDel">🗑 删除选中</button>
         </div>
         <div class="kb-filters" id="trainFilters">
-          <button class="chip-f active" data-cat="">全部</button>
           <button class="chip-f" data-cat="实测/评测报告">实测/评测报告</button>
           <button class="chip-f" data-cat="避坑/风险警示">避坑/风险警示</button>
           <button class="chip-f" data-cat="选型/采购指南">选型/采购指南</button>
@@ -727,7 +724,7 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
           <h3><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>关于本系统</h3>
           <p class="sub">SeekGeo（GEO 软文工作台）—— 面向 GEO（生成式引擎优化）的一站式内容生产系统。集成「企业画像、企业知识库、文章训练、风格规范、软文库、生成器」六大模块：先沉淀品牌素材与知识，再按八大分类训练范文、提炼专属写作风格，最后一键生成更易被 AI 搜索引擎（ChatGPT / Perplexity / 豆包 / 元宝等）收录与引用的软文。</p>
           <p class="kv">数据本地以浏览器缓存 + IndexedDB 双重留存，并经 Cloudflare 反代同步至 Supabase 云端实现多设备实时共享；离线时自动降级为本地存储，联网后自动续传。企业知识库已升级为 IndexedDB 持久化，刷新与重启浏览器均不会丢失。</p>
-          <p class="kv" style="margin-top:8px;color:#0f766e;font-weight:600">构建版本：2026-08-24 · 多表版（e73a402）+ 修复「企业知识库/文章训练」手机端看不到的深层原因：① 首次同步不再请求 7MB 大字段（该响应经代理会 body 挂死、卡死整条同步链路），改为「知识库先拉轻量元数据、点开文档时再单篇加载全文；训练按 40 篇/批批量拉取」；② 修复懒加载完成后查看窗口不刷新的回调参数 bug；③ 同步期间列表显示「正在从云端同步」而非「还是空的」；④ 旧表 geo_store 数据自动搬移到新表（带 20s 超时兜底）。两端均硬刷新（Ctrl+F5 / 长按刷新选「重新加载」）即可生效。</p>
+          <p class="kv" style="margin-top:8px;color:#0f766e;font-weight:600">构建版本：2026-08-24 · 多表版（f21c9d3）+ 软文库/企业知识库/文章训练模块移除「全部」分类入口，默认直接展示并激活首个真实分类（软文库·训练：实测/评测报告；知识库：公司信息），避免空分类干扰；风格规范原本即按分类展示。两端均硬刷新（Ctrl+F5 / 长按刷新选「重新加载」）即可生效。</p>
         </div>
 
         <div class="card">
@@ -762,7 +759,7 @@ function fmtTime(s,fallback){
   if(m)return m[1]+"-"+m[2]+"-"+m[3]+" "+m[4]+":"+m[5];
   return t;
 }
-var libPage=1,entPage=1,kbPage=1,trainPage=1,specPage=1,kbCat="",libCat="",PAGE_SIZE=10,trainSel={},trainCat="",specCat="",libFrom="",libTo="";
+var libPage=1,entPage=1,kbPage=1,trainPage=1,specPage=1,kbCat="公司信息",libCat="实测/评测报告",PAGE_SIZE=10,trainSel={},trainCat="实测/评测报告",specCat="",libFrom="",libTo="";
 var qcPage=1,qcLogPage=1,qcSelId=null,qcCat="",qcSearch="",qcLogs=lsGet("qc_logs",[]),lastQc=null;
 function setQcLogs(a){qcLogs=a||[];lsSet("qc_logs",qcLogs);}
 var KB_CATS=["公司信息","产品介绍","产品信息","客户案例"];
@@ -3013,6 +3010,13 @@ async function init(){
       $all("#specFilters .chip-f").forEach(function(x){x.classList.toggle("active",x===b);});
       specPage=1;renderSpecs();
     });
+  });
+  // 软文库 / 企业知识库 / 文章训练：默认激活首个真实分类（已删除「全部」入口，默认直接展示首分类而非全部）
+  [["#libFilters",libCat,"libCat"],["#kbFilters",kbCat,"kbCat"],["#trainFilters",trainCat,"trainCat"]].forEach(function(p){
+    var box=$(p[0]);
+    if(!box)return;
+    var first=box.querySelector('.chip-f[data-cat="'+p[1]+'"]')||box.querySelector(".chip-f");
+    if(first){first.classList.add("active");}
   });
   // 风格规范：默认展示第一个分类（已无「全部」入口）
   var _firstSpecChip=$("#specFilters .chip-f");
