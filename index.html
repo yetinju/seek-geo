@@ -724,7 +724,6 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
           <h3><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>关于本系统</h3>
           <p class="sub">SeekGeo（GEO 软文工作台）—— 面向 GEO（生成式引擎优化）的一站式内容生产系统。集成「企业画像、企业知识库、文章训练、风格规范、软文库、生成器」六大模块：先沉淀品牌素材与知识，再按八大分类训练范文、提炼专属写作风格，最后一键生成更易被 AI 搜索引擎（ChatGPT / Perplexity / 豆包 / 元宝等）收录与引用的软文。</p>
           <p class="kv">数据本地以浏览器缓存 + IndexedDB 双重留存，并经 Cloudflare 反代同步至 Supabase 云端实现多设备实时共享；离线时自动降级为本地存储，联网后自动续传。企业知识库已升级为 IndexedDB 持久化，刷新与重启浏览器均不会丢失。</p>
-          <p class="kv" style="margin-top:8px;color:#0f766e;font-weight:600">构建版本：2026-08-24 · 多表版（d50a1c9）+ ①生成前拉回候选参考文档正文；②跨端删除同步（墓碑机制）；③**修复文章训练只显示 29 篇**：真正的根因是「旧表迁移 syncLegacyStore 字段级查询旧表 geo_store 时，经 Cloudflare 代理偶发 body 挂死、永久占用串行请求链」，导致后续的 fetchTrainToLocal（拉云端 122 篇）永远排不上、界面只显示本地 localStorage 残留的少量（29 篇）。已：a) 禁用 syncLegacyStore 自动调用（迁移幂等可延迟）；b) 给串行请求链加 22s 整体超时兜底（任何挂死请求必 reject、链永不死锁）；c) loadFromCloud 的 cfg 查询失败不再 throw 阻断；d) pullLoop 即使 cfg 未变也补齐 KB/训练。已实测：硬刷新后约 1~2 分钟从云端恢复全部 122 篇（正文完整）。两端均硬刷新即生效。</p>
         </div>
 
         <div class="card">
