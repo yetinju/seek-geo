@@ -511,7 +511,7 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
             <select id="g_ent"><option value="">不关联</option></select>
           </div>
           <div class="field">
-            <label>主题 / 产品名 <span class="hint">必填</span></label>
+            <label>产品名 <span class="hint">必填</span></label>
             <input id="g_title" placeholder="如：XX 降噪耳机 / 夏季露营装备" value="功率分析仪">
           </div>
           <div class="field">
@@ -2093,7 +2093,7 @@ async function doGen(){
   // 而非只有文件名。已拉回的正文会缓存在本地，后续生成同主题无需再等。
   await ensureTopKbBodies();
   var info=buildPrompt();
-  if(!info.title){toast("请填写主题/产品名");return;}
+  if(!info.title){toast("请填写产品名");return;}
   // 若候选参考文档正文均未同步到本地/云端（历史迁移只搬了元数据），提示用户重新上传以让 AI 参考完整内容
   var refs=topKbDocs(getKB()||[],(info.title+" "+(info.kw||"")),3);
   var anyBody=refs.some(function(d){return d.html||d.text||(typeof d.data==="string"?d.data:null);});
