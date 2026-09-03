@@ -1864,6 +1864,12 @@ function renderHome(){
 function renderLib(){
   var recs=getRecords().filter(function(r){return r.type==="article";});
   var en=$("#libEngine").value,q=$("#libSearch").value.trim().toLowerCase();
+  // 搜索框有内容时：结果可能跨多个分类，故分类按钮不应高亮，避免误导；
+  // 空搜索时：高亮当前 libCat 对应的分类按钮，作为浏览维度提示。
+  $all("#libFilters .chip-f").forEach(function(btn){
+    var c=btn.getAttribute("data-cat")||"";
+    btn.classList.toggle("active", !q && c===libCat);
+  });
   recs=recs.filter(function(r){
     if(en && (r.targetEngines||[]).indexOf(en)<0)return false;
     // ⚠️ 修复：搜索框有内容时跨所有分类全局搜索（忽略 libCat），否则会漏掉其它分类下匹配的同名软文；
