@@ -3043,16 +3043,18 @@ async function trainStyleSpec(cat){
   if(btn){btn.disabled=true;btn.textContent="训练中…";}
   try{
     var parts=[],total=0;
-    pool.slice().sort(function(a,b){return (b.uploadedAt||"").localeCompare(a.uploadedAt||"");}).forEach(function(t,i){
-      if(total>=14000)return;
+    // ⚠️ 训练范围：取该分类下「上传时间最新的 10 篇」范文（不足 10 篇则取全部），
+    // 不再按字符累计截断——保证训练素材是最近更新的最新 10 篇，风格规范更贴合当前文风。
+    var top=pool.slice().sort(function(a,b){return (b.uploadedAt||"").localeCompare(a.uploadedAt||"");}).slice(0,10);
+    top.forEach(function(t,i){
       var c=(t.content||"").slice(0,2500);
       parts.push("范文"+(i+1)+"《"+(t.title||"未命名")+"》：\n"+c);
       total+=c.length+40;
     });
-    var userPrompt="以下是用户上传的「"+(cat||"全部")+"」分类下的若干篇软文范文，请分析并提炼出该分类统一的写作风格规范：\n\n"+parts.join("\n\n")+"\n\n请按以下维度输出规范：\n1. 整体语气与调性\n2. 开头钩子方式（如何在前几句抓住读者）\n3. 段落与结构组织（常用框架/逻辑顺序）\n4. 专业词汇与术语风格\n5. 过渡与连接（常用过渡句）\n6. 收尾与行动号召(CTA)方式\n7. 关键词 / SEO·GEO 植入手法\n8. 应避免的写法（禁忌）\n9. 可复用的典型句式模板（3-5 个，直接给句子）\n\n输出请紧凑、可直接作为生成指令使用。";
+    var userPrompt="以下是用户上传的「"+(cat||"全部")+"」分类下最新的 "+(top.length>=10?"10 篇":top.length+" 篇")+"软文范文，请分析并提炼出该分类统一的写作风格规范：\n\n"+parts.join("\n\n")+"\n\n请按以下维度输出规范：\n1. 整体语气与调性\n2. 开头钩子方式（如何在前几句抓住读者）\n3. 段落与结构组织（常用框架/逻辑顺序）\n4. 专业词汇与术语风格\n5. 过渡与连接（常用过渡句）\n6. 收尾与行动号召(CTA)方式\n7. 关键词 / SEO·GEO 植入手法\n8. 应避免的写法（禁忌）\n9. 可复用的典型句式模板（3-5 个，直接给句子）\n\n输出请紧凑、可直接作为生成指令使用。";
     var spec=await callLLM(userPrompt,ANALYZE_SYS);
     var list=getSpecs();
-    var rec={id:uid(),name:(cat?("「"+cat+"」"):"")+"风格规范",content:spec,at:nowStr(),count:pool.length,articles:pool.map(function(t){return t.title||"未命名";}),category:cat||""};
+    var rec={id:uid(),name:(cat?("「"+cat+"」"):"")+"风格规范",content:spec,at:nowStr(),count:top.length,articles:top.map(function(t){return t.title||"未命名";}),category:cat||""};
     list.push(rec);setSpecs(list);
     renderTrainCats();renderSpecs();
     toast("已生成「"+(cat||"全部")+"」风格规范，可在「风格规范」模块查看");
