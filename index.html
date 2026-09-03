@@ -616,7 +616,6 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
             <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4 12 22l-9-9V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>核心关键词</h3>
             <p class="sub">统一维护品牌与产品的核心关键词。这里添加的关键词会作为「生成器」中「核心关键词」下拉多选项的来源，生成软文时按需勾选即可，无需每次手工输入。</p>
           </div>
-          <button class="btn sm" id="btnAddKw">＋ 新增关键词</button>
         </div>
         <div class="field" style="margin:0 0 12px"><input id="kwSearch" placeholder="🔍 搜索关键词…"></div>
         <div id="kwList"></div>
@@ -3263,8 +3262,7 @@ async function init(){
   $("#btnRegen").addEventListener("click",doGen);
   // enterprise profile add — open modal
   $("#btnAddEnt").addEventListener("click",openEntAdd);
-  // 核心关键词模块：新增 / 搜索
-  $("#btnAddKw").addEventListener("click",openKwAdd);
+  // 核心关键词模块：搜索（新增入口改为空态里的「＋ 新增关键词」大按钮，顶部卡片不再放按钮避免重复）
   $("#kwSearch").addEventListener("input",function(){kwQ=this.value||"";kwPage=1;renderKws();});
   // 生成器「核心关键词」多选下拉：展开/收起 + 点击外部自动收起
   (function(){
