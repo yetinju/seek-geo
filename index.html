@@ -790,7 +790,7 @@ function fmtTime(s,fallback){
   if(m)return m[1]+"-"+m[2]+"-"+m[3]+" "+m[4]+":"+m[5];
   return t;
 }
-var libPage=1,entPage=1,kbPage=1,trainPage=1,specPage=1,kbCat="公司信息",libCat="实测/评测报告",PAGE_SIZE=10,trainSel={},trainCat="实测/评测报告",specCat="",libFrom="",libTo="";
+var libPage=1,entPage=1,kbPage=1,trainPage=1,specPage=1,kbCat="公司信息",libCat="",PAGE_SIZE=10,trainSel={},trainCat="实测/评测报告",specCat="",libFrom="",libTo="";
 var qcPage=1,qcLogPage=1,qcSelId=null,qcCat="",qcSearch="",qcLogs=lsGet("qc_logs",[]),lastQc=null;
 function setQcLogs(a){qcLogs=a||[];lsSet("qc_logs",qcLogs);}
 var KB_CATS=["公司信息","产品介绍","产品信息","客户案例"];
@@ -1864,17 +1864,15 @@ function renderHome(){
 function renderLib(){
   var recs=getRecords().filter(function(r){return r.type==="article";});
   var en=$("#libEngine").value,q=$("#libSearch").value.trim().toLowerCase();
-  // 搜索框有内容时：结果可能跨多个分类，故分类按钮不应高亮，避免误导；
-  // 空搜索时：高亮当前 libCat 对应的分类按钮，作为浏览维度提示。
+  // 分类按钮高亮：始终反映当前 libCat（空=全部则不亮）。点击分类即"在该分类下"筛选，搜索时亦然。
   $all("#libFilters .chip-f").forEach(function(btn){
     var c=btn.getAttribute("data-cat")||"";
-    btn.classList.toggle("active", !q && c===libCat);
+    btn.classList.toggle("active", c===libCat);
   });
   recs=recs.filter(function(r){
     if(en && (r.targetEngines||[]).indexOf(en)<0)return false;
-    // ⚠️ 修复：搜索框有内容时跨所有分类全局搜索（忽略 libCat），否则会漏掉其它分类下匹配的同名软文；
-    // 仅在「无搜索词」时才按当前分类浏览（分类筛选作为无搜索时的浏览维度，而非搜索限制）。
-    if(!q && libCat && (r.tone||"")!==libCat)return false;
+    // libCat 为空（默认/全部）时跨所有分类；点选某分类后按该分类筛选（搜索时也生效 → 点击分类即在分类内搜索）
+    if(libCat && (r.tone||"")!==libCat)return false;
     if(q && ((r.title||"")+(r.keywords||"")).toLowerCase().indexOf(q)<0)return false;
     var d=(r.createdAt||"").slice(0,10);
     if(libFrom && d && d<libFrom)return false;
