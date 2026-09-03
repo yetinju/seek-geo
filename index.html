@@ -790,7 +790,7 @@ function fmtTime(s,fallback){
   if(m)return m[1]+"-"+m[2]+"-"+m[3]+" "+m[4]+":"+m[5];
   return t;
 }
-var libPage=1,entPage=1,kbPage=1,trainPage=1,specPage=1,kbCat="公司信息",libCat="",PAGE_SIZE=10,trainSel={},trainCat="实测/评测报告",specCat="",libFrom="",libTo="";
+var libPage=1,entPage=1,kbPage=1,trainPage=1,specPage=1,kbCat="公司信息",libCat="实测/评测报告",PAGE_SIZE=10,trainSel={},trainCat="实测/评测报告",specCat="",libFrom="",libTo="";
 var qcPage=1,qcLogPage=1,qcSelId=null,qcCat="",qcSearch="",qcLogs=lsGet("qc_logs",[]),lastQc=null;
 function setQcLogs(a){qcLogs=a||[];lsSet("qc_logs",qcLogs);}
 var KB_CATS=["公司信息","产品介绍","产品信息","客户案例"];
