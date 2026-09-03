@@ -1890,7 +1890,7 @@ function renderLib(){
   box.innerHTML=pageItems.map(function(r){
     return '<div class="item hasbtns" data-id="'+r.id+'">'+
       '<div class="top top-btns"><div class="ti">'+esc(r.title)+'</div><div class="acts"><button class="btn ghost sm act-view">查看</button><button class="btn ghost sm act-edit">编辑</button><button class="btn ghost sm act-dl">下载</button><button class="btn danger sm act-del">删除</button></div></div>'+
-      '<div class="meta"><span class="meta-main">'+(r.keywords?'<span class="kw">🔑 '+esc(r.keywords)+'</span>':'')+'<span>🎯 '+((r.targetEngines||[]).join("/")||"—")+'</span><span>'+IC_DOC+' '+countWords(r.content)+' 字</span></span><span class="time">生成于 '+fmtTime(r.createdAt,r.updatedAt)+'</span></div>'+
+      '<div class="meta"><span class="meta-main">'+(r.keywords?'<span class="kw">🔑 '+esc(r.keywords)+'</span>':'')+'<span>🎯 '+((r.targetEngines||[]).join("/")||"—")+'</span><span>'+IC_DOC+' '+countWords(r.content)+' 字</span><span>📂 '+esc(r.tone||"未分类")+'</span></span><span class="time">🕓 生成于 '+fmtTime(r.createdAt,r.updatedAt)+'</span></div>'+
     '</div>';
   }).join("")+pagerHTML(total,libPage,PAGE_SIZE);
   bindItemActions(box);
