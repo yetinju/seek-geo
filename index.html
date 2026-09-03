@@ -1866,8 +1866,10 @@ function renderLib(){
   var en=$("#libEngine").value,q=$("#libSearch").value.trim().toLowerCase();
   recs=recs.filter(function(r){
     if(en && (r.targetEngines||[]).indexOf(en)<0)return false;
-    if(libCat && (r.tone||"")!==libCat)return false;
-    if(q && (r.title+r.keywords).toLowerCase().indexOf(q)<0)return false;
+    // ⚠️ 修复：搜索框有内容时跨所有分类全局搜索（忽略 libCat），否则会漏掉其它分类下匹配的同名软文；
+    // 仅在「无搜索词」时才按当前分类浏览（分类筛选作为无搜索时的浏览维度，而非搜索限制）。
+    if(!q && libCat && (r.tone||"")!==libCat)return false;
+    if(q && ((r.title||"")+(r.keywords||"")).toLowerCase().indexOf(q)<0)return false;
     var d=(r.createdAt||"").slice(0,10);
     if(libFrom && d && d<libFrom)return false;
     if(libTo && d && d>libTo)return false;
