@@ -1864,15 +1864,15 @@ function renderHome(){
 function renderLib(){
   var recs=getRecords().filter(function(r){return r.type==="article";});
   var en=$("#libEngine").value,q=$("#libSearch").value.trim().toLowerCase();
-  // 分类按钮高亮：始终反映当前 libCat（空=全部则不亮）。点击分类即"在该分类下"筛选，搜索时亦然。
+  // 分类按钮高亮：仅在「无搜索词」时反映当前 libCat（默认第一个分类）；搜索时结果跨分类，故不高亮。
   $all("#libFilters .chip-f").forEach(function(btn){
     var c=btn.getAttribute("data-cat")||"";
-    btn.classList.toggle("active", c===libCat);
+    btn.classList.toggle("active", !q && c===libCat);
   });
   recs=recs.filter(function(r){
     if(en && (r.targetEngines||[]).indexOf(en)<0)return false;
-    // libCat 为空（默认/全部）时跨所有分类；点选某分类后按该分类筛选（搜索时也生效 → 点击分类即在分类内搜索）
-    if(libCat && (r.tone||"")!==libCat)return false;
+    // 无搜索词时按当前分类浏览（默认第一个分类）；有搜索词时跨所有分类全局搜索，忽略 libCat。
+    if(!q && libCat && (r.tone||"")!==libCat)return false;
     if(q && ((r.title||"")+(r.keywords||"")).toLowerCase().indexOf(q)<0)return false;
     var d=(r.createdAt||"").slice(0,10);
     if(libFrom && d && d<libFrom)return false;
