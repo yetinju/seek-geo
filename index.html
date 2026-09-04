@@ -3315,6 +3315,7 @@ async function init(){
   // 软文库分类筛选
   $all("#libFilters .chip-f").forEach(function(b){
     b.addEventListener("click",function(){
+      var s=$("#libSearch"); if(s) s.value="";   // 点击分类时清空搜索框
       libCat=b.getAttribute("data-cat")||"";
       $all("#libFilters .chip-f").forEach(function(x){x.classList.toggle("active",x===b);});
       libPage=1;renderLib();
