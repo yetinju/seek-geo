@@ -259,6 +259,9 @@ b{color:var(--ink2);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monos
 .note{background:#fffbeb;border:1px solid #fde68a;border-radius:12px;padding:13px 15px;font-size:13px;color:#92400e;margin-bottom:16px;line-height:1.65}
 .note b{color:#b45309}
 .kv{font-size:13px;color:var(--sub);margin-top:6px;line-height:1.6}
+.bk-list{display:flex;flex-direction:column;gap:8px;margin-top:6px}
+.bk-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 12px;background:var(--card2,#f1f5f9);border:1px solid var(--line,#e2e8f0);border-radius:10px;font-size:13px;color:var(--text,#0f172a)}
+.bk-row span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 pre.code{background:#0f172a;color:#a5f3fc;padding:12px;border-radius:10px;font-size:12px;overflow:auto;white-space:pre-wrap;word-break:break-all}
 .kb-ic{flex:none;width:36px;height:36px;display:flex;align-items:center;justify-content:center;background:var(--brand-soft);border-radius:10px;color:var(--brand)}
 .kb-ic svg{width:18px;height:18px}
@@ -753,6 +756,16 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
           <input type="file" id="importFile" accept="application/json" style="display:none">
           <div class="kv" id="bkMsg"></div>
         </div>
+
+        <div class="card">
+          <h3><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>本地快照 / 一键恢复</h3>
+          <p class="sub">每次数据变更会<strong>自动</strong>把完整状态存一份到浏览器 IndexedDB（保留最近 7 份），作为云端同步异常的兜底。可手动「立即备份」，或「上传到云端」（需建 geo_backup 表）。恢复会覆盖当前未备份的改动。</p>
+          <div class="btn-row" style="margin:4px 0 8px">
+            <button class="btn ghost sm" id="btnSnapNow">立即备份</button>
+            <button class="btn ghost sm" id="btnSnapCloud">上传到云端</button>
+          </div>
+          <div id="bkList" class="bk-list"></div>
+        </div>
         <div class="card">
           <h3><svg viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg>关于本系统</h3>
           <p class="sub">SeekGeo（GEO 软文工作台）—— 面向 GEO（生成式引擎优化）的一站式内容生产系统。集成「企业画像、企业知识库、文章训练、风格规范、软文库、生成器」六大模块：先沉淀品牌素材与知识，再按八大分类训练范文、提炼专属写作风格，最后一键生成更易被 AI 搜索引擎（ChatGPT / Perplexity / 豆包 / 元宝等）收录与引用的软文。</p>
@@ -829,7 +842,7 @@ var SYS_PROMPT = "你是一位精通 GEO（生成式引擎优化，Generative En
 
 /* ============ 存储 ============ */
 function lsGet(k,def){try{var v=localStorage.getItem(K+k);return v==null?def:JSON.parse(v);}catch(e){return def;}}
-function lsSet(k,v){try{localStorage.setItem(K+k,JSON.stringify(v));}catch(e){} scheduleCloudSave();}
+function lsSet(k,v){try{localStorage.setItem(K+k,JSON.stringify(v));}catch(e){} scheduleCloudSave();scheduleSnapshot();}
 function uid(){return Date.now().toString(36)+Math.random().toString(36).slice(2,8);}
 /* ============ 知识库本地持久化（IndexedDB） ============
    问题：原实现把知识库文档（含 base64 全文）写入 localStorage('kbl')，
@@ -914,7 +927,7 @@ var SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFz
 var _db=null,_cloudReady=false,_suppressSave=false,_saveTimer=null,_lastCfgTs=null,_initRetryTimer=null,_bc=null,_pollTimer=null,_keepAliveTimer=null,_syncing=false,_cloudTomb={},_cloudLastErr="",_cloudStopped=false,_kbSynced=lsGet("kbsync",{}),_recSynced=lsGet("recsync",{});
 /* 多表存储：每个模块对应一张表，行 id = 模块内条目 id（知识库/文章训练等大内容每篇一个独立行），彻底隔离、可按模块独立同步。
    配置与墓碑为单例行（id="default"）。旧版单表 geo_store 的数据由 migrateFromLegacy 在首次同步时从本机当前状态幂等迁移，不破坏现有数据。 */
-var TBL={records:"geo_records",train:"geo_train",ents:"geo_ents",specs:"geo_specs",kb:"geo_kb",cfg:"geo_cfg",tomb:"geo_tomb"};
+var TBL={records:"geo_records",train:"geo_train",ents:"geo_ents",specs:"geo_specs",kb:"geo_kb",cfg:"geo_cfg",tomb:"geo_tomb",backup:"geo_backup"};
 /* 合并本地与云端数组：按 id 取并集，本地独有保留、云端独有/同 id 覆盖；无 id 的项按内容去重。绝不丢失任一方数据。 */
 function mergeArr(a,b){
   a=Array.isArray(a)?a:[];b=Array.isArray(b)?b:[];
@@ -975,6 +988,83 @@ function setSync(txt,color){var b=$("#syncBox"),t=$("#syncTxt"),d=b?b.querySelec
 /* 本地变更后，立即（防抖）静默推送到云端；推送成功后通过 BroadcastChannel 通知同浏览器其它标签页即时拉取。
    静默同步不在状态条闪烁"同步中"，避免轮询/自愈造成状态抖动。 */
 function scheduleCloudSave(){if(!_cloudReady||_suppressSave)return;if(_saveTimer)clearTimeout(_saveTimer);_saveTimer=setTimeout(function(){syncToCloud({silent:true});},400);}
+/* ============ 本地自动快照（IndexedDB 版本化备份 + 一键恢复） ============
+   目的：云端同步异常（历史曾出现 122→29 篇静默丢失）时，本地仍有可回滚的历史版本。
+   每次数据变更防抖自动存一份到 seekgeo_backup 库（保留最近 SNAP_KEEP 份）；支持手动即时备份、上传云端、以及一键恢复。 */
+var SNAP_KEEP=7,_snapTimer=null,_bkDB=null,_bkReady=false,_lastCloudBk=null;
+function bkOpen(){
+  if(_bkDB)return Promise.resolve(_bkDB);
+  return new Promise(function(res){
+    try{
+      var req=indexedDB.open("seekgeo_backup",1);
+      req.onupgradeneeded=function(){var db=req.result;if(db.objectStoreNames&&!db.objectStoreNames.contains("snaps"))db.createObjectStore("snaps",{keyPath:"id"});};
+      req.onsuccess=function(){_bkDB=req.result;_bkReady=true;res(_bkDB);};
+      req.onerror=function(){res(null);};
+    }catch(e){res(null);}
+  });
+}
+function bkPut(s){return new Promise(function(res,rej){bkOpen().then(function(db){if(!db)return rej(new Error("backup db unavailable"));var t=db.transaction("snaps","readwrite");t.objectStore("snaps").put(s);t.oncomplete=function(){res();};t.onerror=function(){rej(t.error||new Error("put fail"));};});});}
+function bkGet(id){return new Promise(function(res){bkOpen().then(function(db){if(!db)return res(null);var t=db.transaction("snaps","readonly");var r=t.objectStore("snaps").get(id);r.onsuccess=function(){res(r.result||null);};r.onerror=function(){res(null);};});});}
+function bkAll(){return new Promise(function(res){bkOpen().then(function(db){if(!db)return res([]);var t=db.transaction("snaps","readonly");var r=t.objectStore("snaps").getAll();r.onsuccess=function(){res(Array.isArray(r.result)?r.result:[]);};r.onerror=function(){res([]);};});});}
+function bkDel(id){return new Promise(function(res){bkOpen().then(function(db){if(!db)return res();var t=db.transaction("snaps","readwrite");t.objectStore("snaps").delete(id);t.oncomplete=function(){res();};t.onerror=function(){res();};});});}
+async function bkPrune(keep){
+  try{var all=await bkAll();all.sort(function(a,b){return (b.id||0)-(a.id||0);});for(var i=keep;i<all.length;i++){try{await bkDel(all[i].id);}catch(e){}}}
+  catch(e){}
+}
+function buildSnapshot(){
+  return {records:getRecords(),ents:getEnts(),kws:getKws(),kb:getKB(),train:getTrain(),specs:getSpecs(),cfg:getCfg(),qc_logs:lsGet("qc_logs",[]),tomb:getTomb(),train_spec:getTrainSpec()};
+}
+function scheduleSnapshot(){if(_snapTimer)clearTimeout(_snapTimer);_snapTimer=setTimeout(function(){saveSnapshot("自动");},8000);}
+async function saveSnapshot(note){
+  try{
+    var snap=buildSnapshot();
+    snap.id=Date.now();snap.at=new Date(snap.id).toISOString();snap.note=note||"";
+    await bkPut(snap);await bkPrune(SNAP_KEEP);
+    if(_cloudReady)cloudBackupNow(snap);
+    renderBackupList();
+  }catch(e){console.warn("snapshot failed",e);}
+}
+async function restoreSnapshot(id){
+  var snap=await bkGet(id);if(!snap){toast("该备份不存在");return;}
+  setRecords(snap.records||[]);setEnts(snap.ents||[]);setKws(snap.kws||[]);setKB(snap.kb||[]);
+  setTrain(snap.train||[]);setSpecs(snap.specs||[]);setCfg(snap.cfg||{});setQcLogs(snap.qc_logs||[]);setTomb(snap.tomb||{});
+  if(snap.train_spec)setTrainSpec(snap.train_spec);
+  refreshAll();fillCfg();renderKwMulti();
+  toast("已恢复到 "+fmtTime(snap.at));
+}
+/* 云端备份：把完整快照 upsert 到 geo_backup 表（需在建表 SQL 中创建该表）。表不存在/无权限时静默失败并提示。
+   云端行有体积限制，知识库仅保留元数据（正文以云端 geo_kb 为准），避免超大行写入失败。 */
+async function cloudBackupNow(snap){
+  if(!_cloudReady||!_db)return;
+  try{
+    var s=snap?JSON.parse(JSON.stringify(snap)):buildSnapshot();
+    if(!snap){s.id=Date.now();s.at=new Date(s.id).toISOString();s.note="云端";}
+    if(s.kb&&s.kb.length){ s.kb=s.kb.map(function(d){var o={};for(var k in d)o[k]=d[k];delete o.html;delete o.text;delete o.data;return o;}); }
+    await _db.from(TBL.backup).upsert({id:String(s.id),payload:s,updated_at:new Date().toISOString()});
+    _lastCloudBk=s.at;renderBackupList();
+  }catch(e){console.warn("cloud backup failed (geo_backup 表可能不存在，请在 Supabase 建表)",e);toast("云端备份失败：geo_backup 表可能未创建（见说明）");}
+}
+async function dailySnapshotCheck(){
+  try{
+    var all=await bkAll();
+    var recent=all.sort(function(a,b){return (b.id||0)-(a.id||0);})[0];
+    if(!recent || (Date.now()-(recent.id||0)) > 24*3600*1000){ await saveSnapshot("每日自动"); }
+  }catch(e){}
+}
+async function renderBackupList(){
+  var box=document.getElementById("bkList");if(!box)return;
+  try{
+    var all=await bkAll();all.sort(function(a,b){return (b.id||0)-(a.id||0);});
+    if(!all.length){box.innerHTML='<div class="empty-state" style="padding:12px 0">还没有本地备份。每次数据变更会自动生成，也可点「立即备份」。</div>';return;}
+    box.innerHTML=all.map(function(s){
+      var t=fmtTime(s.at);var note=s.note?(' · '+esc(s.note)):'';
+      return '<div class="bk-row"><span>'+t+note+'</span><button class="btn ghost xs" data-bk="'+s.id+'">恢复</button></div>';
+    }).join("");
+    Array.prototype.forEach.call(box.querySelectorAll("[data-bk]"),function(b){
+      b.addEventListener("click",function(){if(confirm("确定恢复到该备份？当前未备份的改动将被覆盖。"))restoreSnapshot(Number(b.getAttribute("data-bk")));});
+    });
+  }catch(e){box.innerHTML="";}
+}
 /* 跨标签页/跨窗口即时同步：本端推送成功后广播，其它同域标签页收到后立即 pullLoop（无需等轮询）。 */
 function broadcastChange(hash){try{if(_bc&&hash)_bc.postMessage({type:"push",hash:hash});}catch(e){}}
 /* 建立实时通道：BroadcastChannel（主流浏览器）+ localStorage 的 storage 事件（兜底，覆盖同源多标签）。任意一端写入后，其它端近乎瞬时刷新。 */
@@ -3207,7 +3297,7 @@ function switchTab(tab){
   if(tab==="spec")renderSpecs();
   if(tab==="qc"){renderQc();renderQcRight();}
   if(tab==="qclog")renderQcLog();
-  if(tab==="set")fillCfg();
+  if(tab==="set"){fillCfg();renderBackupList();}
   window.scrollTo(0,0);
 }
 
@@ -3256,6 +3346,7 @@ async function init(){
   fillEntSelect();
   refreshAll();
   fillCfg();
+  dailySnapshotCheck();
   // nav
   $all("#nav button").forEach(function(b){b.addEventListener("click",function(){switchTab(b.getAttribute("data-tab"));});});
   $("#btnSettingsTop").addEventListener("click",function(){switchTab("set");});
@@ -3385,6 +3476,9 @@ async function init(){
   $("#btnImport").addEventListener("click",function(){$("#importFile").click();});
   $("#importFile").addEventListener("change",function(e){if(e.target.files[0])importBackup(e.target.files[0]);});
   $("#btnClear").addEventListener("click",clearAll);
+  // 本地快照 / 云端备份
+  $("#btnSnapNow").addEventListener("click",function(){saveSnapshot("手动");toast("已创建本地备份");});
+  $("#btnSnapCloud").addEventListener("click",function(){cloudBackupNow();});
   // mask close
   $("#mask").addEventListener("click",function(e){if(e.target===$("#mask"))closeSheet();});
   // 软文质检：级联选择器 + 自动质检按钮
