@@ -735,7 +735,6 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
           <div class="field"><label>接口地址 (Base URL)</label><input id="cfg_url" placeholder="https://api.deepseek.com/v1"></div>
           <div class="field"><label>模型名</label><input id="cfg_model" placeholder="deepseek-chat"></div>
           <div class="field"><label>CORS 代理前缀 <span class="hint">选填，跨域报错时填</span></label><input id="cfg_proxy" placeholder="如 https://corsProxy.com/?url=  （留空则直连）"></div>
-          <div class="field check"><label class="ck"><input type="checkbox" id="cfg_selfcheck" checked> 生成后自动进行「专业自检」（会再调用 1 次模型，token 成本约翻倍；关闭可省成本，仅生成不修订）</label></div>
           <div class="btn-row" style="margin-bottom:6px">
             <button class="btn ghost sm" id="btnTest">测试连接</button>
             <button class="btn sm" id="btnSaveCfg">保存设置</button>
@@ -2132,14 +2131,6 @@ async function callLLM(userPrompt,sysOverride,timeoutMs){
 }
 
 var lastGen=null;
-/* 文末专业自检：把已生成的正文喂回模型，自查是否存在「概念误用/无出处精确数字/关键词堆砌/绝对化贬损」，有问题自动修订；无明显问题则原样返回。 */
-var SELFCHECK_SYS="你是一位严谨的中文技术文章审校编辑。任务：审校用户提供的一篇软文正文，找出并自动修订以下问题，然后只输出修订后的完整正文（不要任何解释、不要加前后缀、不要用代码块包裹）。需要自查并修订的问题：\n1. 概念/术语误用：如把『ADC 分辨率位数』误写成『标称 ENOB 位数』这类混淆；术语前后不一致的，统一为开篇主词。\n2. 无出处的精确数字/绝对化宣称：对没有给出型号、数据手册或测试条件支撑的精确技术指标（如『<1ns』『±0.03%』『100ppm/°C』），改为『纳秒级』『约』『通常/一般量级』『以官方数据手册为准』等留有余地、客观的表述；不得凭空编造数字。\n3. 关键词堆砌：同一核心关键词在全文重复出现过多（超过约5次）、或生硬嵌入破坏语句通顺的，删减到自然出现的程度，保持语句流畅。\n4. 对比绝对化：对其他设备/竞品/普通机型的贬损性、绝对化表述，改为『常见/通常/部分机型/一般量级』等客观留余地的措辞。\n5. 明显语病、冗余重复：顺手修正，保持专业可读。\n若原文没有以上问题，就原样输出，不要改动。";
-async function selfCheckArticle(text){
-  if(!text)return text;
-  var out=await callLLM("请审校并修订下面这篇正文：\n\n"+text, SELFCHECK_SYS);
-  out=(out||"").trim();
-  return out||text;
-}
 async function doGen(){
   // 生成前按需拉回「候选参考文档」的正文：KB 为懒加载架构（首次只同步元数据，docx 等正文需点开才取），
   // 先按主题算出 top-3 候选，再把其中正文缺失的文档从云端单篇拉回，保证拼接进 prompt 的是完整正文（含产品参数细节），
@@ -2156,26 +2147,10 @@ async function doGen(){
   setGenLoading(true);
   try{
     var text=await callLLM(info.prompt);
-    // 先保留已付费生成的正文，绝不因为后续自检失败而丢掉
     lastGen={title:info.title,kw:info.kw,engines:info.engines,tone:info.tone,content:text,kbRefId:info.kbRefId||null};
     $("#genOut").style.display="block";$("#genOut").textContent=text;
     $("#genBar").style.display="flex";
-    var cfg=getCfg();
-    if(cfg.autoSelfCheck!==false){
-      toast("生成完成，正在做专业自检…");
-      try{
-        var final=await selfCheckArticle(text);
-        final=(final||"").trim();
-        if(final){lastGen.content=final;$("#genOut").textContent=final;}
-        toast("生成完成（已自检修订）");
-      }catch(e){
-        // 自检失败不致命：正文(text)已在 lastGen 中保留，仅提示
-        $("#genOut").textContent=text+"\n\n⚠️ 专业自检未成功完成（"+e.message+"）。已为你保留本次生成的正文，可直接保存。";
-        toast("生成完成（自检跳过）");
-      }
-    }else{
-      toast("生成完成");
-    }
+    toast("生成完成");
   }catch(e){
     $("#genOut").style.display="block";$("#genOut").textContent="⚠️ "+e.message;
     $("#genBar").style.display="none";
@@ -3199,13 +3174,11 @@ function fillCfg(){
   var c=getCfg();
   $("#cfg_key").value=c.apiKey||"";$("#cfg_url").value=c.baseUrl||"https://api.deepseek.com/v1";
   $("#cfg_model").value=c.model||"deepseek-chat";$("#cfg_proxy").value=c.proxy||"";
-  $("#cfg_selfcheck").checked=(c.autoSelfCheck!==false);
 }
 function saveCfg(){
   var c=getCfg();
   c.apiKey=$("#cfg_key").value.trim();c.baseUrl=$("#cfg_url").value.trim()||"https://api.deepseek.com/v1";
   c.model=$("#cfg_model").value.trim()||"deepseek-chat";c.proxy=$("#cfg_proxy").value.trim();
-  c.autoSelfCheck=$("#cfg_selfcheck").checked;
   setCfg(c);$("#cfgMsg").textContent="✅ 已保存（仅存于本机浏览器）";toast("设置已保存");
 }
 async function testConn(){
