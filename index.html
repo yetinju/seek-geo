@@ -259,9 +259,21 @@ b{color:var(--ink2);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monos
 .note{background:#fffbeb;border:1px solid #fde68a;border-radius:12px;padding:13px 15px;font-size:13px;color:#92400e;margin-bottom:16px;line-height:1.65}
 .note b{color:#b45309}
 .kv{font-size:13px;color:var(--sub);margin-top:6px;line-height:1.6}
-.bk-list{display:flex;flex-direction:column;gap:8px;margin-top:6px}
-.bk-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 12px;background:var(--card2,#f1f5f9);border:1px solid var(--line,#e2e8f0);border-radius:10px;font-size:13px;color:var(--text,#0f172a)}
-.bk-row span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bk-list{display:flex;flex-direction:column;gap:10px;margin-top:6px}
+.bk-row{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--brand);border-radius:12px;padding:12px 14px;box-shadow:var(--shadow-sm);transition:box-shadow .18s var(--ease),transform .12s var(--ease),border-color .18s var(--ease);animation:bkIn .26s var(--ease) both}
+.bk-row:hover{box-shadow:0 8px 22px rgba(16,24,40,.1);transform:translateY(-1px);border-left-color:var(--brand-2)}
+@keyframes bkIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.bk-main{display:flex;flex-direction:column;gap:4px;min-width:0;flex:1}
+.bk-top{display:flex;align-items:center;gap:9px;min-width:0}
+.bk-ic{width:30px;height:30px;flex:none;display:flex;align-items:center;justify-content:center;background:var(--brand-soft);border-radius:9px;font-size:15px}
+.bk-time{font-weight:700;font-size:13.5px;color:var(--ink);white-space:nowrap}
+.bk-tag{font-size:11px;font-weight:600;color:var(--brand-ink);background:var(--brand-soft);border-radius:999px;padding:2px 9px;white-space:nowrap;flex:none}
+.bk-stat{font-size:12px;color:var(--sub);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bk-restore{flex:none;border:1px solid var(--line);background:var(--surface);color:var(--brand-ink);border-radius:9px;padding:7px 15px;font-size:13px;font-weight:700;cursor:pointer;transition:all .15s var(--ease)}
+.bk-restore:hover{background:var(--brand);color:#fff;border-color:var(--brand)}
+.bk-empty{display:flex;flex-direction:column;align-items:center;gap:6px;padding:26px 16px;color:var(--sub);font-size:13px;text-align:center;background:var(--surface-2);border:1px dashed var(--line);border-radius:12px;line-height:1.6}
+.bk-empty .bk-em{font-size:26px}
+@media (prefers-reduced-motion:reduce){.bk-row{animation:none}}
 pre.code{background:#0f172a;color:#a5f3fc;padding:12px;border-radius:10px;font-size:12px;overflow:auto;white-space:pre-wrap;word-break:break-all}
 .kb-ic{flex:none;width:36px;height:36px;display:flex;align-items:center;justify-content:center;background:var(--brand-soft);border-radius:10px;color:var(--brand)}
 .kb-ic svg{width:18px;height:18px}
@@ -1070,10 +1082,18 @@ async function renderBackupList(){
   var box=document.getElementById("bkList");if(!box)return;
   try{
     var all=await bkAll();all.sort(function(a,b){return (b.id||0)-(a.id||0);});
-    if(!all.length){box.innerHTML='<div class="empty-state" style="padding:12px 0">还没有本地备份。每次数据变更会自动生成，也可点「立即备份」。</div>';return;}
-    box.innerHTML=all.map(function(s){
-      var t=fmtTime(s.at);var note=s.note?(' · '+esc(s.note)):'';
-      return '<div class="bk-row"><span>'+t+note+'</span><button class="btn ghost xs" data-bk="'+s.id+'">恢复</button></div>';
+    if(!all.length){box.innerHTML='<div class="bk-empty"><div class="bk-em">🗂️</div><div>还没有本地备份</div><div style="font-size:12px;opacity:.85">每次数据变更会自动生成；也可点「立即备份」手动创建。</div></div>';return;}
+    box.innerHTML=all.map(function(s,i){
+      var t=fmtTime(s.at);
+      var note=s.note?('<span class="bk-tag">'+esc(s.note)+'</span>'):'';
+      var rc=(s.records||[]).length,ec=(s.ents||[]).length,kc=(s.kws||[]).length,kbc=(s.kb||[]).length,tc=(s.train||[]).length;
+      var stats=[];if(rc)stats.push("文章 "+rc);if(ec)stats.push("企业 "+ec);if(kc)stats.push("关键词 "+kc);if(kbc)stats.push("知识库 "+kbc);if(tc)stats.push("训练 "+tc);
+      var stat=stats.length?stats.join(" · "):"（空状态）";
+      return '<div class="bk-row" style="animation-delay:'+(i*45)+'ms">'
+        +'<div class="bk-ic">🗂️</div>'
+        +'<div class="bk-main"><div class="bk-top"><span class="bk-time">'+t+'</span>'+note+'</div>'
+        +'<div class="bk-stat">'+stat+'</div></div>'
+        +'<button type="button" class="bk-restore" data-bk="'+s.id+'">恢复</button></div>';
     }).join("");
     Array.prototype.forEach.call(box.querySelectorAll("[data-bk]"),function(b){
       b.addEventListener("click",function(){if(confirm("确定恢复到该备份？当前未备份的改动将被覆盖。"))restoreSnapshot(Number(b.getAttribute("data-bk")));});
