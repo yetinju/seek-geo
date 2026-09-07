@@ -1019,6 +1019,13 @@ async function saveSnapshot(note){
   try{
     var snap=buildSnapshot();
     snap.id=Date.now();snap.at=new Date(snap.id).toISOString();snap.note=note||"";
+    // 去重：与最新一份备份的数据内容相同（忽略 id/时间/备注）则跳过，避免刷新/云端同步无变化时堆积重复备份
+    var all=await bkAll();
+    if(all.length){
+      all.sort(function(a,b){return (b.id||0)-(a.id||0);});
+      var sig=function(o){try{return JSON.stringify({r:o.records,e:o.ents,k:o.kws,kb:o.kb,t:o.train,sp:o.specs,c:o.cfg,q:o.qc_logs,to:o.tomb,ts:o.train_spec});}catch(e){return "";};};
+      if(sig(all[0])===sig(snap)){ renderBackupList(); return; }
+    }
     await bkPut(snap);await bkPrune(SNAP_KEEP);
     if(_cloudReady)cloudBackupNow(snap);
     renderBackupList();
