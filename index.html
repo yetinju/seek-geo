@@ -763,6 +763,7 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
           <div class="btn-row" style="margin:4px 0 8px">
             <button class="btn ghost sm" id="btnSnapNow">立即备份</button>
             <button class="btn ghost sm" id="btnSnapCloud">上传到云端</button>
+            <button class="btn ghost danger sm" id="btnClearBackups">清空全部备份</button>
           </div>
           <div id="bkList" class="bk-list"></div>
         </div>
@@ -1057,6 +1058,13 @@ async function dailySnapshotCheck(){
     var recent=all.sort(function(a,b){return (b.id||0)-(a.id||0);})[0];
     if(!recent || (Date.now()-(recent.id||0)) > 24*3600*1000){ await saveSnapshot("每日自动"); }
   }catch(e){}
+}
+async function clearAllBackups(){
+  try{
+    var all=await bkAll();
+    await Promise.all(all.map(function(s){return bkDel(s.id);}));
+    renderBackupList();toast("已清空全部本地备份");
+  }catch(e){console.warn("clear backups failed",e);}
 }
 async function renderBackupList(){
   var box=document.getElementById("bkList");if(!box)return;
@@ -3486,6 +3494,7 @@ async function init(){
   // 本地快照 / 云端备份
   $("#btnSnapNow").addEventListener("click",function(){saveSnapshot("手动");toast("已创建本地备份");});
   $("#btnSnapCloud").addEventListener("click",function(){cloudBackupNow();});
+  $("#btnClearBackups").addEventListener("click",function(){if(confirm("确定清空全部本地备份？此操作不可恢复。"))clearAllBackups();});
   // mask close
   $("#mask").addEventListener("click",function(e){if(e.target===$("#mask"))closeSheet();});
   // 软文质检：级联选择器 + 自动质检按钮
