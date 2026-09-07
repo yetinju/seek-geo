@@ -3319,13 +3319,9 @@ async function init(){
   $("#g_ent").addEventListener("change",function(){
     var id=this.value;if(!id){return;}
     var ent=getEnts().filter(function(x){return x.id===id;})[0];if(!ent)return;
+    // 仅自动带入「品牌/产品卖点」；核心关键词不取自企业画像的品牌关键词，
+    // 生成器的核心关键词来源固定为「核心关键词」模块用户自行新增的词（自定义多选下拉）。
     if(ent.selling&&!$("#g_sell").value)$("#g_sell").value=ent.selling;
-    if(ent.keywords){
-      var add=ent.keywords.split(/[,，]/).map(function(s){return s.trim();}).filter(Boolean);
-      var set=$("#g_kw").value.trim()?$("#g_kw").value.trim().split(/[,，]/).map(function(s){return s.trim();}):[];
-      add.forEach(function(k){if(set.indexOf(k)<0)set.push(k);});
-      $("#g_kw").value=set.join("，");
-    }
   });
   // filters
   ["#libEngine","#libSearch"].forEach(function(s){$(s).addEventListener("input",function(){libPage=1;renderLib();});});
