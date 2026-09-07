@@ -735,6 +735,7 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
           <div class="field"><label>接口地址 (Base URL)</label><input id="cfg_url" placeholder="https://api.deepseek.com/v1"></div>
           <div class="field"><label>模型名</label><input id="cfg_model" placeholder="deepseek-chat"></div>
           <div class="field"><label>CORS 代理前缀 <span class="hint">选填，跨域报错时填</span></label><input id="cfg_proxy" placeholder="如 https://corsProxy.com/?url=  （留空则直连）"></div>
+          <div class="field check"><label class="ck"><input type="checkbox" id="cfg_selfcheck" checked> 生成后自动进行「专业自检」（会再调用 1 次模型，token 成本约翻倍；关闭可省成本，仅生成不修订）</label></div>
           <div class="btn-row" style="margin-bottom:6px">
             <button class="btn ghost sm" id="btnTest">测试连接</button>
             <button class="btn sm" id="btnSaveCfg">保存设置</button>
@@ -2094,7 +2095,7 @@ function setGenLoading(on){
 }
 
 var ANALYZE_SYS="你是一位资深的软文写作教练与文本风格分析师。你的任务是阅读用户提供的多篇软文范文，提炼出可复用的「写作风格规范」，用于指导 AI 后续生成同风格的软文。要求：用中文、结构化、要点清晰、可操作；只输出风格规律，不要复述原文；直接输出要点，不要用代码块包裹。";
-async function callLLM(userPrompt,sysOverride){
+async function callLLM(userPrompt,sysOverride,timeoutMs){
   var cfg=getCfg();
   if(!cfg.apiKey){throw new Error("请先在「设置」中填写 API Key");}
   var base=(cfg.baseUrl||"https://api.deepseek.com/v1").replace(/\/+$/,"");
@@ -2107,7 +2108,18 @@ async function callLLM(userPrompt,sysOverride){
     if(px.indexOf("=")>=0 || px.slice(-1)==="/"){url=px+encodeURIComponent(url);}
     else{url=px+url;}
   }
-  var res=await fetch(url,{method:"POST",headers:headers,body:body});
+  // 关键修复：加超时与中断，避免请求挂起导致界面永久“卡住”（但服务端可能已计费）
+  var ms=timeoutMs||cfg.genTimeout||120000;
+  var ctrl=new AbortController();
+  var timer=setTimeout(function(){ctrl.abort();},ms);
+  var res;
+  try{
+    res=await fetch(url,{method:"POST",headers:headers,body:body,signal:ctrl.signal});
+  }catch(e){
+    clearTimeout(timer);
+    if(e&&e.name==="AbortError")throw new Error("请求超时（"+Math.round(ms/1000)+" 秒未收到响应）。该请求可能已在服务端计费，请到平台核对用量；可重试或调大超时时间。");
+    throw e;
+  }finally{clearTimeout(timer);}
   if(!res.ok){
     var t="";try{t=await res.text();}catch(e){}
     if(res.status===401)throw new Error("API Key 无效或被拒（401），请检查 Key 是否正确。");
@@ -2144,12 +2156,26 @@ async function doGen(){
   setGenLoading(true);
   try{
     var text=await callLLM(info.prompt);
-    toast("生成完成，正在做专业自检…");
-    var final=await selfCheckArticle(text);
-    lastGen={title:info.title,kw:info.kw,engines:info.engines,tone:info.tone,content:final,kbRefId:info.kbRefId||null};
-    $("#genOut").style.display="block";$("#genOut").textContent=final;
+    // 先保留已付费生成的正文，绝不因为后续自检失败而丢掉
+    lastGen={title:info.title,kw:info.kw,engines:info.engines,tone:info.tone,content:text,kbRefId:info.kbRefId||null};
+    $("#genOut").style.display="block";$("#genOut").textContent=text;
     $("#genBar").style.display="flex";
-    toast("生成完成（已自检修订）");
+    var cfg=getCfg();
+    if(cfg.autoSelfCheck!==false){
+      toast("生成完成，正在做专业自检…");
+      try{
+        var final=await selfCheckArticle(text);
+        final=(final||"").trim();
+        if(final){lastGen.content=final;$("#genOut").textContent=final;}
+        toast("生成完成（已自检修订）");
+      }catch(e){
+        // 自检失败不致命：正文(text)已在 lastGen 中保留，仅提示
+        $("#genOut").textContent=text+"\n\n⚠️ 专业自检未成功完成（"+e.message+"）。已为你保留本次生成的正文，可直接保存。";
+        toast("生成完成（自检跳过）");
+      }
+    }else{
+      toast("生成完成");
+    }
   }catch(e){
     $("#genOut").style.display="block";$("#genOut").textContent="⚠️ "+e.message;
     $("#genBar").style.display="none";
@@ -3173,11 +3199,13 @@ function fillCfg(){
   var c=getCfg();
   $("#cfg_key").value=c.apiKey||"";$("#cfg_url").value=c.baseUrl||"https://api.deepseek.com/v1";
   $("#cfg_model").value=c.model||"deepseek-chat";$("#cfg_proxy").value=c.proxy||"";
+  $("#cfg_selfcheck").checked=(c.autoSelfCheck!==false);
 }
 function saveCfg(){
   var c=getCfg();
   c.apiKey=$("#cfg_key").value.trim();c.baseUrl=$("#cfg_url").value.trim()||"https://api.deepseek.com/v1";
   c.model=$("#cfg_model").value.trim()||"deepseek-chat";c.proxy=$("#cfg_proxy").value.trim();
+  c.autoSelfCheck=$("#cfg_selfcheck").checked;
   setCfg(c);$("#cfgMsg").textContent="✅ 已保存（仅存于本机浏览器）";toast("设置已保存");
 }
 async function testConn(){
