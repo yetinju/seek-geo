@@ -1069,11 +1069,30 @@ async function cloudBackupNow(snap){
     _lastCloudBk=s.at;renderBackupList();
   }catch(e){console.warn("cloud backup failed (geo_backup 表可能不存在，请在 Supabase 建表)",e);toast("云端备份失败：geo_backup 表可能未创建（见说明）");}
 }
-async function dailySnapshotCheck(){
+/* 每天 24:00（次日凌晨 00:00）定时自动备份一次：计时器到点触发，并自我续约到次日同一时刻。
+   需保持页面在 24:00 时处于打开状态；若当晚已关闭，则由 backfillTodayBackup 在次日打开时补备，确保“每天至少一份”。 */
+function nextMidnightMs(){
+  var now=new Date();
+  var next=new Date(now); next.setHours(24,0,0,0); // 次日凌晨 00:00
+  var ms=next-now; if(ms<1000)ms=24*3600*1000;
+  return ms;
+}
+function scheduleMidnightBackup(){
   try{
-    var all=await bkAll();
-    var recent=all.sort(function(a,b){return (b.id||0)-(a.id||0);})[0];
-    if(!recent || (Date.now()-(recent.id||0)) > 24*3600*1000){ await saveSnapshot("每日自动"); }
+    setTimeout(function(){
+      saveSnapshot("每日自动").catch(function(e){});
+      scheduleMidnightBackup();
+    }, nextMidnightMs());
+  }catch(e){}
+}
+/* 打开页面时补备：若今天（自然日 00:00 起）还没有任何备份，立即补一份，避免当晚 24:00 页面已关闭而漏备。 */
+function backfillTodayBackup(){
+  try{
+    bkAll().then(function(all){
+      var today=new Date(); today.setHours(0,0,0,0);
+      var hasToday=all.some(function(s){ return (new Date(s.id))>=today; });
+      if(!hasToday)saveSnapshot("每日自动").catch(function(e){});
+    });
   }catch(e){}
 }
 async function clearAllBackups(){
@@ -3386,7 +3405,8 @@ async function init(){
   fillEntSelect();
   refreshAll();
   fillCfg();
-  dailySnapshotCheck();
+  backfillTodayBackup();
+  scheduleMidnightBackup();
   // nav
   $all("#nav button").forEach(function(b){b.addEventListener("click",function(){switchTab(b.getAttribute("data-tab"));});});
   $("#btnSettingsTop").addEventListener("click",function(){switchTab("set");});
