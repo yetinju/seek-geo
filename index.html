@@ -828,6 +828,13 @@ function fmtDateTime(iso){
     return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())+" "+p(d.getHours())+":"+p(d.getMinutes());
   }catch(e){return iso||"";}
 }
+/* 本地（用户所在时区）时间字符串 YYYY-MM-DD HH:mm:ss，用于写入 Supabase 的 updated_at / 快照 at，
+   避免 toISOString() 的 UTC 导致云端表比北京时间慢 8 小时。裸本地时间串对 timestamp / timestamptz 列均可正常解析显示。 */
+function localISO(d){
+  d=d instanceof Date?d:new Date(d==null?Date.now():d);
+  var p=function(n){return (n<10?"0":"")+n;};
+  return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())+" "+p(d.getHours())+":"+p(d.getMinutes())+":"+p(d.getSeconds());
+}
 var libPage=1,entPage=1,kbPage=1,trainPage=1,specPage=1,kbCat="公司信息",libCat="实测/评测报告",PAGE_SIZE=10,trainSel={},trainCat="实测/评测报告",specCat="",libFrom="",libTo="";
 var qcPage=1,qcLogPage=1,qcSelId=null,qcCat="",qcSearch="",qcLogs=lsGet("qc_logs",[]),lastQc=null;
 function setQcLogs(a){qcLogs=a||[];lsSet("qc_logs",qcLogs);}
@@ -1043,7 +1050,7 @@ function scheduleSnapshot(){if(_snapTimer)clearTimeout(_snapTimer);_snapTimer=se
 async function saveSnapshot(note){
   try{
     var snap=buildSnapshot();
-    snap.id=Date.now();snap.at=new Date(snap.id).toISOString();snap.note=note||"";
+    snap.id=Date.now();snap.at=localISO(snap.id);snap.note=note||"";
     // 去重：与最新一份备份的数据内容相同（忽略 id/时间/备注）则跳过，避免刷新/云端同步无变化时堆积重复备份
     var all=await bkAll();
     if(all.length){
@@ -1070,9 +1077,9 @@ async function cloudBackupNow(snap){
   if(!_cloudReady||!_db)return false;
   try{
     var s=snap?JSON.parse(JSON.stringify(snap)):buildSnapshot();
-    if(!snap){s.id=Date.now();s.at=new Date(s.id).toISOString();s.note="云端";}
+    if(!snap){s.id=Date.now();s.at=localISO(s.id);s.note="云端";}
     if(s.kb&&s.kb.length){ s.kb=s.kb.map(function(d){var o={};for(var k in d)o[k]=d[k];delete o.html;delete o.text;delete o.data;return o;}); }
-    await _db.from(TBL.backup).upsert({id:CLOUD_BK_ID,payload:s,updated_at:new Date().toISOString()});
+    await _db.from(TBL.backup).upsert({id:CLOUD_BK_ID,payload:s,updated_at:localISO()});
     _lastCloudBk=s.at;renderBackupList();
     return true;
   }catch(e){console.warn("cloud backup failed (geo_backup 表可能不存在，请在 Supabase 建表)",e);return false;}
@@ -1082,7 +1089,7 @@ async function cloudBackupNow(snap){
 async function uploadToCloud(){
   try{
     var snap=buildSnapshot();
-    snap.id=Date.now();snap.at=new Date(snap.id).toISOString();snap.note="云端";
+    snap.id=Date.now();snap.at=localISO(snap.id);snap.note="云端";
     var all=await bkAll();
     var sig=function(o){try{return JSON.stringify({r:o.records,e:o.ents,k:o.kws,kb:o.kb,t:o.train,sp:o.specs,c:o.cfg,q:o.qc_logs,to:o.tomb,ts:o.train_spec});}catch(e){return "";};};
     var latest=all.length?all.sort(function(a,b){return (b.id||0)-(a.id||0);})[0]:null;
