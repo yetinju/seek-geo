@@ -664,7 +664,6 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
         </div>
         <h3 class="sec-title"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>按分类训练</h3>
         <div class="cat-train-grid" id="trainCatGrid"></div>
-        <div style="display:flex;justify-content:flex-end;margin:14px 0 12px"><button class="btn ghost danger sm" id="btnClearTrain">🗑 清空全部训练范文</button></div>
         <div class="batchbar" id="trainBatchBar">
           <label class="chk"><input type="checkbox" id="trainSelAll"> 全选本页</label>
           <span class="cnt" id="trainSelCnt">已选 0 项</span>
@@ -2998,11 +2997,6 @@ function downloadTrainWord(r){
   setTimeout(function(){URL.revokeObjectURL(url);},1500);
   toast("已导出 Word 文档");
 }
-function clearAllTrain(){
-  if(!getTrain().length){toast("训练范文已经是空的");return;}
-  if(!confirm("确定清空全部训练范文？此操作不可恢复。"))return;
-  setTrain([]);trainPage=1;renderTrain();toast("已清空全部训练范文");
-}
 function updateTrainSelBar(){
   var bar=$("#trainBatchBar");if(!bar)return;
   var selIds=Object.keys(trainSel).filter(function(k){return trainSel[k];});
@@ -3516,7 +3510,6 @@ async function init(){
       });
     });
   });
-  $("#btnClearTrain").addEventListener("click",clearAllTrain);
   $("#trainSelAll").addEventListener("change",function(){
     var checked=this.checked;
     $all("#trainList .item").forEach(function(el){
