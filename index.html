@@ -953,6 +953,7 @@ var _db=null,_cloudReady=false,_suppressSave=false,_saveTimer=null,_lastCfgTs=nu
 /* 多表存储：每个模块对应一张表，行 id = 模块内条目 id（知识库/文章训练等大内容每篇一个独立行），彻底隔离、可按模块独立同步。
    配置与墓碑为单例行（id="default"）。旧版单表 geo_store 的数据由 migrateFromLegacy 在首次同步时从本机当前状态幂等迁移，不破坏现有数据。 */
 var TBL={records:"geo_records",train:"geo_train",ents:"geo_ents",specs:"geo_specs",kb:"geo_kb",cfg:"geo_cfg",tomb:"geo_tomb",backup:"geo_backup"};
+var CLOUD_BK_ID="default"; // geo_backup 固定单行 id：云端始终只保留一份最新快照，避免多次上传产生多行/孤儿行导致与本地、与其他表不一致
 /* 合并本地与云端数组：按 id 取并集，本地独有保留、云端独有/同 id 覆盖；无 id 的项按内容去重。绝不丢失任一方数据。 */
 function mergeArr(a,b){
   a=Array.isArray(a)?a:[];b=Array.isArray(b)?b:[];
@@ -1067,14 +1068,36 @@ async function restoreSnapshot(id){
 /* 云端备份：把完整快照 upsert 到 geo_backup 表（需在建表 SQL 中创建该表）。表不存在/无权限时静默失败并提示。
    云端行有体积限制，知识库仅保留元数据（正文以云端 geo_kb 为准），避免超大行写入失败。 */
 async function cloudBackupNow(snap){
-  if(!_cloudReady||!_db)return;
+  if(!_cloudReady||!_db)return false;
   try{
     var s=snap?JSON.parse(JSON.stringify(snap)):buildSnapshot();
     if(!snap){s.id=Date.now();s.at=new Date(s.id).toISOString();s.note="云端";}
     if(s.kb&&s.kb.length){ s.kb=s.kb.map(function(d){var o={};for(var k in d)o[k]=d[k];delete o.html;delete o.text;delete o.data;return o;}); }
-    await _db.from(TBL.backup).upsert({id:String(s.id),payload:s,updated_at:new Date().toISOString()});
+    await _db.from(TBL.backup).upsert({id:CLOUD_BK_ID,payload:s,updated_at:new Date().toISOString()});
     _lastCloudBk=s.at;renderBackupList();
-  }catch(e){console.warn("cloud backup failed (geo_backup 表可能不存在，请在 Supabase 建表)",e);toast("云端备份失败：geo_backup 表可能未创建（见说明）");}
+    return true;
+  }catch(e){console.warn("cloud backup failed (geo_backup 表可能不存在，请在 Supabase 建表)",e);return false;}
+}
+/* 手动「上传到云端」：先把当前完整状态落成一份本地快照（与本地列表一一对应，不堆孤儿行），
+   再覆盖式推送到 geo_backup 固定单行（CLOUD_BK_ID），保证云端始终只有一份与本地对应的最新快照。 */
+async function uploadToCloud(){
+  try{
+    var snap=buildSnapshot();
+    snap.id=Date.now();snap.at=new Date(snap.id).toISOString();snap.note="云端";
+    var all=await bkAll();
+    var sig=function(o){try{return JSON.stringify({r:o.records,e:o.ents,k:o.kws,kb:o.kb,t:o.train,sp:o.specs,c:o.cfg,q:o.qc_logs,to:o.tomb,ts:o.train_spec});}catch(e){return "";};};
+    var latest=all.length?all.sort(function(a,b){return (b.id||0)-(a.id||0);})[0]:null;
+    if(latest&&sig(latest)===sig(snap)){
+      // 内容无变化：复用最新本地行（仅更新时间/备注），避免新增重复行
+      latest.at=snap.at;latest.note="云端";await bkPut(latest);snap=latest;
+    }else{
+      await bkPut(snap);await bkPrune(SNAP_KEEP);
+    }
+    renderBackupList();
+    if(!_cloudReady||!_db){toast("云端未连接：已存为本地备份");return;}
+    var ok=await cloudBackupNow(snap);
+    toast(ok?"已上传到云端":"云端备份失败：geo_backup 表可能未创建（见说明）");
+  }catch(e){console.warn("uploadToCloud failed",e);toast("上传失败");}
 }
 /* 每天 24:00（次日凌晨 00:00）定时自动备份一次：计时器到点触发，并自我续约到次日同一时刻。
    需保持页面在 24:00 时处于打开状态；若当晚已关闭，则由 backfillTodayBackup 在次日打开时补备，确保“每天至少一份”。 */
@@ -3539,7 +3562,7 @@ async function init(){
   $("#btnClear").addEventListener("click",clearAll);
   // 本地快照 / 云端备份
   $("#btnSnapNow").addEventListener("click",function(){saveSnapshot("手动");toast("已创建本地备份");});
-  $("#btnSnapCloud").addEventListener("click",function(){cloudBackupNow();});
+  $("#btnSnapCloud").addEventListener("click",function(){uploadToCloud();});
   $("#btnClearBackups").addEventListener("click",function(){if(confirm("确定清空全部本地备份？此操作不可恢复。"))clearAllBackups();});
   // mask close
   $("#mask").addEventListener("click",function(e){if(e.target===$("#mask"))closeSheet();});
