@@ -3187,21 +3187,27 @@ function kwClose(commit){
 function renderKwMulti(){
   var box=$("#g_kw_box"),panel=$("#g_kw_panel"),opts=$("#g_kw_opts");
   if(!box||!panel||!opts)return;
-  var sel=kwEditing?kwWork:kwSelected(),kws=getKws();
-  // 已选标签区（编辑中反映暂存 kwWork，否则反映已提交 #g_kw）
-  if(!sel.length){
+  var boxSel=kwSelected();                 // 内容框始终只显示“已确认”的选择
+  var optSel=kwEditing?kwWork:kwSelected(); // 面板勾选反映暂存（未确认不进内容框）
+  var kws=getKws();
+  // 已选标签区（仅已确认内容；编辑中的暂存不在此显示）
+  if(!boxSel.length){
     box.innerHTML='<span class="kws-ph">点击选择核心关键词…</span>';
   }else{
-    box.innerHTML=sel.map(function(w){
+    box.innerHTML=boxSel.map(function(w){
       return '<span class="kws-chip" data-w="'+esc(w)+'">'+esc(w)+'<b data-rm="'+esc(w)+'">×</b></span>';
     }).join("");
     $all("[data-rm]",box).forEach(function(b){
       b.addEventListener("click",function(ev){
         ev.stopPropagation();
         var w=b.getAttribute("data-rm");
-        var cur=kwEditing?kwWork.slice():kwSelected();
-        cur=cur.filter(function(x){return x!==w;});
-        if(kwEditing)kwWork=cur;else kwSetSelected(cur);
+        // 编辑中删除：同步从暂存与已确认两处移除，保证“内容框=已确认”不变量
+        if(kwEditing){
+          kwWork=kwWork.filter(function(x){return x!==w;});
+          kwSetSelected(kwSelected().filter(function(x){return x!==w;}));
+        }else{
+          kwSetSelected(kwSelected().filter(function(x){return x!==w;}));
+        }
         renderKwMulti();
       });
     });
@@ -3212,7 +3218,7 @@ function renderKwMulti(){
     return;
   }
   opts.innerHTML=kws.map(function(r){
-    var w=r.word||"",on=sel.indexOf(w)>=0;
+    var w=r.word||"",on=optSel.indexOf(w)>=0;
     return '<div class="kws-opt'+(on?" on":"")+'" data-w="'+esc(w)+'"><span class="kws-check'+(on?" on":"")+'"></span>'+esc(w)+'</div>';
   }).join("");
   $all(".kws-opt",opts).forEach(function(el){
