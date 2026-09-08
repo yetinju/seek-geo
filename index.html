@@ -776,9 +776,8 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
 
         <div class="card">
           <h3><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>本地快照 / 一键恢复</h3>
-          <p class="sub">每次数据变更会<strong>自动</strong>把完整状态存一份到浏览器 IndexedDB（保留最近 7 份），作为云端同步异常的兜底。可手动「立即备份」，或「上传到云端」（需建 geo_backup 表）。恢复会覆盖当前未备份的改动。</p>
+          <p class="sub">每次数据变更会<strong>自动</strong>把完整状态存一份到浏览器 IndexedDB（保留最近 7 份），作为云端同步异常的兜底；也可「上传到云端」（需建 geo_backup 表）。恢复会覆盖当前未备份的改动。</p>
           <div class="btn-row" style="margin:4px 0 8px">
-            <button class="btn ghost sm" id="btnSnapNow">立即备份</button>
             <button class="btn ghost sm" id="btnSnapCloud">上传到云端</button>
             <button class="btn ghost danger sm" id="btnClearBackups">清空全部备份</button>
           </div>
@@ -3561,7 +3560,6 @@ async function init(){
   $("#importFile").addEventListener("change",function(e){if(e.target.files[0])importBackup(e.target.files[0]);});
   $("#btnClear").addEventListener("click",clearAll);
   // 本地快照 / 云端备份
-  $("#btnSnapNow").addEventListener("click",function(){saveSnapshot("手动");toast("已创建本地备份");});
   $("#btnSnapCloud").addEventListener("click",function(){uploadToCloud();});
   $("#btnClearBackups").addEventListener("click",function(){if(confirm("确定清空全部本地备份？此操作不可恢复。"))clearAllBackups();});
   // mask close
