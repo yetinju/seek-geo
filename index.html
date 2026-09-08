@@ -67,7 +67,11 @@ input[type=file]::file-selector-button{margin-right:10px;padding:7px 13px;border
 .kws-chip{display:inline-flex;align-items:center;gap:6px;background:var(--brand-soft);color:var(--brand-ink);font-size:13px;font-weight:600;padding:5px 9px;border-radius:999px;line-height:1.2}
 .kws-chip b{cursor:pointer;font-weight:700;opacity:.65;font-size:14px;padding:0 1px}
 .kws-chip b:hover{opacity:1}
-.kws-multi-panel{position:absolute;z-index:50;left:0;right:0;top:calc(100% + 6px);background:#fff;border:1px solid var(--line);border-radius:var(--radius-sm);box-shadow:0 12px 32px rgba(16,24,40,.12);max-height:264px;overflow:auto;padding:6px}
+.kws-multi-panel{position:absolute;z-index:50;left:0;right:0;top:calc(100% + 6px);background:#fff;border:1px solid var(--line);border-radius:var(--radius-sm);box-shadow:0 12px 32px rgba(16,24,40,.12);max-height:340px;display:flex;flex-direction:column;overflow:hidden;padding:0}
+.kws-opts{overflow:auto;flex:1;padding:6px}
+.kws-foot{padding:10px 12px;border-top:1px solid var(--line);display:flex;gap:8px;background:#fff}
+.kws-foot .btn{width:auto;flex:1;margin:0;padding:9px 10px}
+.kws-foot .btn.sm{border-radius:10px}
 .kws-opt{display:flex;align-items:center;gap:9px;padding:10px 11px;border-radius:9px;font-size:14px;color:var(--ink);cursor:pointer;transition:background .12s var(--ease)}
 .kws-opt:hover{background:var(--surface-2)}
 .kws-opt.on{background:var(--brand-soft);color:var(--brand-ink);font-weight:600}
@@ -559,7 +563,14 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
             <label>核心关键词 <span class="hint">可多选，选项来自「核心关键词」模块</span></label>
             <div class="kws-multi" id="g_kw_multi">
               <div class="kws-multi-box" id="g_kw_box"><span class="kws-ph">点击选择核心关键词…</span></div>
-              <div class="kws-multi-panel" id="g_kw_panel" style="display:none"></div>
+              <div class="kws-multi-panel" id="g_kw_panel" style="display:none">
+                <div class="kws-opts" id="g_kw_opts"></div>
+                <div class="kws-foot">
+                  <button type="button" class="btn ghost sm" id="kwReset">重置</button>
+                  <button type="button" class="btn ghost sm" id="kwCancel">取消</button>
+                  <button type="button" class="btn sm" id="kwOk">确认</button>
+                </div>
+              </div>
             </div>
             <input type="hidden" id="g_kw" value="">
           </div>
@@ -3165,11 +3176,19 @@ function kwSelected(){
 function kwSetSelected(arr){
   var el=$("#g_kw");if(el)el.value=(arr||[]).join("，");
 }
+var kwEditing=false,kwWork=[];
+function kwClose(commit){
+  if(commit)kwSetSelected(kwWork);
+  kwEditing=false;kwWork=[];
+  var wrap=$("#g_kw_multi");if(wrap)wrap.classList.remove("open");
+  var panel=$("#g_kw_panel");if(panel)panel.style.display="none";
+  renderKwMulti();
+}
 function renderKwMulti(){
-  var box=$("#g_kw_box"),panel=$("#g_kw_panel");
-  if(!box||!panel)return;
-  var sel=kwSelected(),kws=getKws();
-  // 已选标签区
+  var box=$("#g_kw_box"),panel=$("#g_kw_panel"),opts=$("#g_kw_opts");
+  if(!box||!panel||!opts)return;
+  var sel=kwEditing?kwWork:kwSelected(),kws=getKws();
+  // 已选标签区（编辑中反映暂存 kwWork，否则反映已提交 #g_kw）
   if(!sel.length){
     box.innerHTML='<span class="kws-ph">点击选择核心关键词…</span>';
   }else{
@@ -3180,26 +3199,30 @@ function renderKwMulti(){
       b.addEventListener("click",function(ev){
         ev.stopPropagation();
         var w=b.getAttribute("data-rm");
-        kwSetSelected(kwSelected().filter(function(x){return x!==w;}));
+        var cur=kwEditing?kwWork.slice():kwSelected();
+        cur=cur.filter(function(x){return x!==w;});
+        if(kwEditing)kwWork=cur;else kwSetSelected(cur);
         renderKwMulti();
       });
     });
   }
-  // 下拉选项面板
+  // 下拉选项区（写入 #g_kw_opts，底部 取消/重置/确认 为静态 HTML）
   if(!kws.length){
-    panel.innerHTML='<div class="kws-empty">还没有核心关键词，请到「核心关键词」模块添加。</div>';
+    opts.innerHTML='<div class="kws-empty">还没有核心关键词，请到「核心关键词」模块添加。</div>';
     return;
   }
-  panel.innerHTML=kws.map(function(r){
+  opts.innerHTML=kws.map(function(r){
     var w=r.word||"",on=sel.indexOf(w)>=0;
     return '<div class="kws-opt'+(on?" on":"")+'" data-w="'+esc(w)+'"><span class="kws-check'+(on?" on":"")+'"></span>'+esc(w)+'</div>';
   }).join("");
-  $all(".kws-opt",panel).forEach(function(el){
-    el.addEventListener("click",function(){
-      var w=el.getAttribute("data-w"),cur=kwSelected();
+  $all(".kws-opt",opts).forEach(function(el){
+    el.addEventListener("click",function(ev){
+      ev.stopPropagation(); // 阻止冒泡到 document 的“点击外部关闭”，避免选完即关
+      var w=el.getAttribute("data-w");
+      var cur=kwEditing?kwWork.slice():kwSelected();
       var i=cur.indexOf(w);
       if(i>=0)cur.splice(i,1); else cur.push(w);
-      kwSetSelected(cur);
+      if(kwEditing)kwWork=cur; else kwSetSelected(cur);
       renderKwMulti();
     });
   });
@@ -3461,18 +3484,23 @@ async function init(){
   // 核心关键词模块：新增按钮（位置与企业画像一致，置于卡片右上角）
   $("#btnAddKw").addEventListener("click",openKwAdd);
   $("#kwSearch").addEventListener("input",function(){kwQ=this.value||"";kwPage=1;renderKws();});
-  // 生成器「核心关键词」多选下拉：展开/收起 + 点击外部自动收起
+  // 生成器「核心关键词」多选下拉：展开/收起 + 点击外部自动收起 + 底部 取消/重置/确认
   (function(){
     var wrap=$("#g_kw_multi");if(!wrap)return;
     var box=$("#g_kw_box"),panel=$("#g_kw_panel");
     box.addEventListener("click",function(ev){
       if(ev.target&&ev.target.hasAttribute&&ev.target.hasAttribute("data-rm"))return; // 点 chip 的 × 不切换展开
-      var open=wrap.classList.toggle("open");
-      panel.style.display=open?"block":"none";
+      if(wrap.classList.contains("open")){ kwClose(true); return; } // 再次点击收起 = 确认保留
+      kwEditing=true;kwWork=kwSelected().slice();
+      wrap.classList.add("open");panel.style.display="block";renderKwMulti();
     });
     document.addEventListener("click",function(ev){
-      if(!wrap.contains(ev.target)){wrap.classList.remove("open");if(panel)panel.style.display="none";}
+      if(wrap.classList.contains("open")&&!wrap.contains(ev.target)){ kwClose(true); } // 点击外部 = 确认保留后关闭
     });
+    var reset=$("#kwReset"),cancel=$("#kwCancel"),ok=$("#kwOk");
+    if(reset)reset.addEventListener("click",function(ev){ev.stopPropagation();kwWork=[];renderKwMulti();}); // 重置：清空暂存选择，保持打开
+    if(cancel)cancel.addEventListener("click",function(ev){ev.stopPropagation();kwClose(false);}); // 取消：丢弃暂存，关闭
+    if(ok)ok.addEventListener("click",function(ev){ev.stopPropagation();kwClose(true);}); // 确认：提交到 #g_kw 并关闭
   })();
   // generator: link enterprise profile
   $("#g_ent").addEventListener("change",function(){
