@@ -260,9 +260,8 @@ b{color:var(--ink2);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monos
 .note b{color:#b45309}
 .kv{font-size:13px;color:var(--sub);margin-top:6px;line-height:1.6}
 .bk-list{display:flex;flex-direction:column;gap:10px;margin-top:6px}
-.bk-row{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--brand);border-radius:12px;padding:12px 14px;box-shadow:var(--shadow-sm);transition:box-shadow .18s var(--ease),transform .12s var(--ease),border-color .18s var(--ease);animation:bkIn .26s var(--ease) both}
+.bk-row{display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--brand);border-radius:12px;padding:12px 14px;box-shadow:var(--shadow-sm);transition:box-shadow .18s var(--ease),transform .12s var(--ease),border-color .18s var(--ease)}
 .bk-row:hover{box-shadow:0 8px 22px rgba(16,24,40,.1);transform:translateY(-1px);border-left-color:var(--brand-2)}
-@keyframes bkIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 .bk-main{display:flex;flex-direction:column;gap:4px;min-width:0;flex:1}
 .bk-top{display:flex;align-items:center;gap:9px;min-width:0}
 .bk-ic{width:30px;height:30px;flex:none;display:flex;align-items:center;justify-content:center;background:var(--brand-soft);border-radius:9px;font-size:15px}
@@ -273,7 +272,6 @@ b{color:var(--ink2);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monos
 .bk-restore:hover{background:var(--brand);color:#fff;border-color:var(--brand)}
 .bk-empty{display:flex;flex-direction:column;align-items:center;gap:6px;padding:26px 16px;color:var(--sub);font-size:13px;text-align:center;background:var(--surface-2);border:1px dashed var(--line);border-radius:12px;line-height:1.6}
 .bk-empty .bk-em{font-size:26px}
-@media (prefers-reduced-motion:reduce){.bk-row{animation:none}}
 pre.code{background:#0f172a;color:#a5f3fc;padding:12px;border-radius:10px;font-size:12px;overflow:auto;white-space:pre-wrap;word-break:break-all}
 .kb-ic{flex:none;width:36px;height:36px;display:flex;align-items:center;justify-content:center;background:var(--brand-soft);border-radius:10px;color:var(--brand)}
 .kb-ic svg{width:18px;height:18px}
@@ -1044,7 +1042,7 @@ async function saveSnapshot(note){
     if(all.length){
       all.sort(function(a,b){return (b.id||0)-(a.id||0);});
       var sig=function(o){try{return JSON.stringify({r:o.records,e:o.ents,k:o.kws,kb:o.kb,t:o.train,sp:o.specs,c:o.cfg,q:o.qc_logs,to:o.tomb,ts:o.train_spec});}catch(e){return "";};};
-      if(sig(all[0])===sig(snap)){ renderBackupList(); return; }
+      if(sig(all[0])===sig(snap)){ return; }
     }
     await bkPut(snap);await bkPrune(SNAP_KEEP);
     if(_cloudReady)cloudBackupNow(snap);
@@ -1096,7 +1094,7 @@ async function renderBackupList(){
       var rc=(s.records||[]).length,ec=(s.ents||[]).length,kc=(s.kws||[]).length,kbc=(s.kb||[]).length,tc=(s.train||[]).length;
       var stats=[];if(rc)stats.push("文章 "+rc);if(ec)stats.push("企业 "+ec);if(kc)stats.push("关键词 "+kc);if(kbc)stats.push("知识库 "+kbc);if(tc)stats.push("训练 "+tc);
       var stat=stats.length?stats.join(" · "):"（空状态）";
-      return '<div class="bk-row" style="animation-delay:'+(i*45)+'ms">'
+      return '<div class="bk-row">'
         +'<div class="bk-ic">🗂️</div>'
         +'<div class="bk-main"><div class="bk-top"><span class="bk-time">'+t+'</span>'+note+'</div>'
         +'<div class="bk-stat">'+stat+'</div></div>'
