@@ -791,7 +791,7 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
 
         <div class="card">
           <h3><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/></svg>本地快照 / 一键恢复</h3>
-          <p class="sub">每次数据变更会<strong>自动</strong>把完整状态存一份到浏览器 IndexedDB（保留最近 7 份），作为云端同步异常的兜底；也可「上传到云端」（需建 geo_backup 表）。恢复会覆盖当前未备份的改动。</p>
+          <p class="sub">每次数据变更会<strong>自动</strong>把完整状态存一份到浏览器 IndexedDB（保留最近 7 份），作为云端同步异常的兜底；每天 24:00 或当天首次打开时也会补一份「每日自动」备份（需页面保持打开或当日打开过）。也可「上传到云端」（需建 geo_backup 表）。恢复会覆盖当前未备份的改动。</p>
           <div class="btn-row" style="margin:4px 0 8px">
             <button class="btn ghost sm" id="btnSnapCloud">上传到云端</button>
             <button class="btn ghost danger sm" id="btnClearBackups">清空全部备份</button>
@@ -1062,16 +1062,19 @@ function buildSnapshot(){
   return {records:getRecords(),ents:getEnts(),kws:getKws(),kb:getKB(),train:getTrain(),specs:getSpecs(),cfg:getCfg(),qc_logs:lsGet("qc_logs",[]),tomb:getTomb(),train_spec:getTrainSpec()};
 }
 function scheduleSnapshot(){if(_snapTimer)clearTimeout(_snapTimer);_snapTimer=setTimeout(function(){saveSnapshot("自动");},8000);}
-async function saveSnapshot(note){
+async function saveSnapshot(note,force){
   try{
     var snap=buildSnapshot();
     snap.id=Date.now();snap.at=localISO(snap.id);snap.note=note||"";
-    // 去重：与最新一份备份的数据内容相同（忽略 id/时间/备注）则跳过，避免刷新/云端同步无变化时堆积重复备份
-    var all=await bkAll();
-    if(all.length){
-      all.sort(function(a,b){return (b.id||0)-(a.id||0);});
-      var sig=function(o){try{return JSON.stringify({r:o.records,e:o.ents,k:o.kws,kb:o.kb,t:o.train,sp:o.specs,c:o.cfg,q:o.qc_logs,to:o.tomb,ts:o.train_spec});}catch(e){return "";};};
-      if(sig(all[0])===sig(snap)){ return; }
+    // 去重：非 force 时，与最新一份备份的数据内容相同（忽略 id/时间/备注）则跳过，避免刷新/云端同步无变化时堆积重复备份。
+    // force=true 用于每日自动/打开补备：必须生成一条带该 note 的独立备份，避免被「云端」等其它备注覆盖。
+    if(!force){
+      var all=await bkAll();
+      if(all.length){
+        all.sort(function(a,b){return (b.id||0)-(a.id||0);});
+        var sig=function(o){try{return JSON.stringify({r:o.records,e:o.ents,k:o.kws,kb:o.kb,t:o.train,sp:o.specs,c:o.cfg,q:o.qc_logs,to:o.tomb,ts:o.train_spec});}catch(e){return "";};};
+        if(sig(all[0])===sig(snap)){ return; }
+      }
     }
     await bkPut(snap);await bkPrune(SNAP_KEEP);
     if(_cloudReady)cloudBackupNow(snap);
@@ -1105,15 +1108,8 @@ async function uploadToCloud(){
   try{
     var snap=buildSnapshot();
     snap.id=Date.now();snap.at=localISO(snap.id);snap.note="云端";
-    var all=await bkAll();
-    var sig=function(o){try{return JSON.stringify({r:o.records,e:o.ents,k:o.kws,kb:o.kb,t:o.train,sp:o.specs,c:o.cfg,q:o.qc_logs,to:o.tomb,ts:o.train_spec});}catch(e){return "";};};
-    var latest=all.length?all.sort(function(a,b){return (b.id||0)-(a.id||0);})[0]:null;
-    if(latest&&sig(latest)===sig(snap)){
-      // 内容无变化：复用最新本地行（仅更新时间/备注），避免新增重复行
-      latest.at=snap.at;latest.note="云端";await bkPut(latest);snap=latest;
-    }else{
-      await bkPut(snap);await bkPrune(SNAP_KEEP);
-    }
+    // 手动「上传到云端」：总是单独生成一条本地「云端」快照，避免复用/覆盖「每日自动」等其它备注行，确保本地列表能看出每日自动与云端上传两条记录。
+    await bkPut(snap);await bkPrune(SNAP_KEEP);
     renderBackupList();
     if(!_cloudReady||!_db){toast("云端未连接：已存为本地备份");return;}
     var ok=await cloudBackupNow(snap);
@@ -1131,7 +1127,7 @@ function nextMidnightMs(){
 function scheduleMidnightBackup(){
   try{
     setTimeout(function(){
-      saveSnapshot("每日自动").catch(function(e){});
+      saveSnapshot("每日自动",true).catch(function(e){});
       scheduleMidnightBackup();
     }, nextMidnightMs());
   }catch(e){}
@@ -1142,7 +1138,7 @@ function backfillTodayBackup(){
     bkAll().then(function(all){
       var today=new Date(); today.setHours(0,0,0,0);
       var hasToday=all.some(function(s){ return (new Date(s.id))>=today; });
-      if(!hasToday)saveSnapshot("每日自动").catch(function(e){});
+      if(!hasToday)saveSnapshot("每日自动",true).catch(function(e){});
     });
   }catch(e){}
 }
@@ -1157,7 +1153,7 @@ async function renderBackupList(){
   var box=document.getElementById("bkList");if(!box)return;
   try{
     var all=await bkAll();all.sort(function(a,b){return (b.id||0)-(a.id||0);});
-    if(!all.length){box.innerHTML='<div class="bk-empty"><div class="bk-em">🗂️</div><div>还没有本地备份</div><div style="font-size:12px;opacity:.85">每次数据变更会自动生成；也可点「立即备份」手动创建。</div></div>';return;}
+    if(!all.length){box.innerHTML='<div class="bk-empty"><div class="bk-em">🗂️</div><div>还没有本地备份</div><div style="font-size:12px;opacity:.85">每次数据变更会自动生成；也可点「上传到云端」手动备份。</div></div>';return;}
     box.innerHTML=all.map(function(s,i){
       var t=fmtDateTime(s.at);
       var note=s.note?('<span class="bk-tag">'+esc(s.note)+'</span>'):'';
