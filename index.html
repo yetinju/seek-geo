@@ -1020,7 +1020,7 @@ function getTomb(){return Object.assign({},_cloudTomb,lsGet("tomb",{}));} // 本
 function setTombLocal(o){lsSet("tomb",o||{});}
 function setTomb(o){setTombLocal(o);} // 兼容旧调用
 function addTomb(id){if(!id)return;var t=getTomb()||{};t[id]=Date.now();setTombLocal(t);pushTomb();}
-function purgeTomb(ids){if(!ids||!ids.length)return;var t=getTomb()||{},ch=false;ids.forEach(function(i){if(t[i]){delete t[i];ch=true;}});if(ch){setTombLocal(t);pushTomb();}}
+function purgeTomb(ids){if(!ids||!ids.length)return;var lt=lsGet("tomb",{})||{};ids.forEach(function(i){delete lt[i];if(_cloudTomb)delete _cloudTomb[i];});setTombLocal(lt);pushTomb();}
 async function pushTomb(){
   if(!_cloudReady||!_db)return;
   try{ await _db.from(TBL.tomb).upsert({id:"default",payload:{ids:getTomb()},updated_at:new Date().toISOString()}); }
@@ -1089,10 +1089,25 @@ async function saveSnapshot(note,force){
 }
 async function restoreSnapshot(id){
   var snap=await bkGet(id);if(!snap){toast("该备份不存在");return;}
-  setRecords(snap.records||[]);setEnts(snap.ents||[]);setKws(snap.kws||[]);setKB(snap.kb||[]);
-  setTrain(snap.train||[]);setSpecs(snap.specs||[]);setCfg(snap.cfg||{});setQcLogs(snap.qc_logs||[]);setTomb(snap.tomb||{});
-  if(snap.train_spec)setTrainSpec(snap.train_spec);
-  refreshAll();fillCfg();renderKwMulti();
+  _suppressSave=true;
+  try{
+    setRecords(snap.records||[]);setEnts(snap.ents||[]);setKws(snap.kws||[]);setKB(snap.kb||[]);
+    setTrain(snap.train||[]);setSpecs(snap.specs||[]);setCfg(snap.cfg||{});setQcLogs(snap.qc_logs||[]);setTomb(snap.tomb||{});
+    if(snap.train_spec)setTrainSpec(snap.train_spec);
+    // 关键修复：快照中仍存在的 id 必须从墓碑中剔除（含内存中的云端墓碑缓存 _cloudTomb），
+    // 否则随后的云端同步（pullTomb 拉回旧墓碑 + 墓碑感知并集）会把刚恢复的内容再次当作“已删除”剔除，
+    // 表现为“点了恢复没用，几秒后又回到删除后的版本”。
+    var alive=[];
+    (snap.records||[]).forEach(function(x){if(x&&x.id)alive.push(x.id);});
+    (snap.ents||[]).forEach(function(x){if(x&&x.id)alive.push(x.id);});
+    (snap.train||[]).forEach(function(x){if(x&&x.id)alive.push(x.id);});
+    (snap.specs||[]).forEach(function(x){if(x&&x.id)alive.push(x.id);});
+    (snap.kb||[]).forEach(function(x){if(x&&x.id)alive.push(x.id);});
+    purgeTomb(alive);
+    if(_cloudReady&&_db){ try{ await _db.from(TBL.tomb).upsert({id:"default",payload:{ids:getTomb()},updated_at:new Date().toISOString()}); }catch(e){} } // 立即把干净墓碑落云，防 pullTomb 拉回旧墓碑
+    refreshAll();fillCfg();renderKwMulti();
+    if(_cloudReady){ try{ await syncToCloud({silent:true}); purgeTomb(alive); }catch(e){} } // 全量同步把恢复内容推回云端；同步后再补一次剔除，封死在途轮询的竞态窗口
+  }finally{ _suppressSave=false; }
   toast("已恢复到 "+fmtTime(snap.at));
 }
 /* 云端备份：把完整快照 upsert 到 geo_backup 表（需在建表 SQL 中创建该表）。表不存在/无权限时静默失败并提示。
