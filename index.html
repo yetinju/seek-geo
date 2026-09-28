@@ -184,6 +184,12 @@ input[type=file]::file-selector-button{margin-right:10px;padding:7px 13px;border
 .item .meta-main span{display:inline-flex;align-items:center;gap:4px}
 .item .meta .time{white-space:nowrap;flex-shrink:0;color:var(--sub);font-size:12px}
 .item .acts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;flex:none;margin-left:auto}
+/* 企业画像卡片 meta：行业/人群不被长文本挤压缩成竖排；长产品/服务描述独立成行并 2 行截断（悬停 title 看全文） */
+.ent-meta{flex-wrap:wrap;row-gap:6px}
+.ent-meta .ent-ind,.ent-meta .ent-aud{flex-shrink:0;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ent-meta .ent-ind{order:1}
+.ent-meta .ent-aud{order:2}
+.ent-meta .ent-prod{order:3;flex:1 1 100%;min-width:0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;word-break:break-word}
 .st{font-size:11px;font-weight:700;padding:3px 9px;border-radius:8px;white-space:nowrap}
 .st.s0{background:#ede9fe;color:#6d28d9}.st.s1{background:#dbeafe;color:#1d4ed8}
 .st.s2{background:#fef3c7;color:#b45309}.st.s3{background:#dcfce7;color:#15803d}
@@ -1877,7 +1883,11 @@ function renderEnt(){
   box.innerHTML=pageItems.map(function(r){
     return '<div class="item" data-id="'+r.id+'">'+
       '<div class="top"><div class="ti">'+esc(r.name)+'</div>'+(r.tone?'<span class="chip">'+esc(r.tone)+'</span>':'')+'</div>'+
-      '<div class="meta"><span>🏭 '+(r.industry||"—")+'</span>'+(r.product?'<span>📦 '+esc(r.product)+'</span>':'')+(r.audience?'<span>🎯 '+esc(r.audience)+'</span>':'')+'</div>'+
+      '<div class="meta ent-meta">'
+      +'<span class="ent-ind" title="'+(r.industry?esc(r.industry):"")+'">🏭 '+(r.industry?esc(r.industry):"—")+'</span>'
+      +(r.product?'<span class="ent-prod" title="'+esc(r.product)+'">📦 '+esc(r.product)+'</span>':'')
+      +(r.audience?'<span class="ent-aud" title="'+esc(r.audience)+'">🎯 '+esc(r.audience)+'</span>':'')
+      +'</div>'+
       '<div class="acts"><button class="btn ghost sm act-edit">编辑</button><button class="btn danger sm act-del">删除</button></div>'+
     '</div>';
   }).join("")+pagerHTML(total,entPage,PAGE_SIZE);
