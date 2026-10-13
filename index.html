@@ -1355,6 +1355,18 @@ function cloudErrHint(e){
     return "无法连接云端，请检查网络后重试";
   return "云端未连接，仅本地可用";
 }
+/* 离线自动重连：手机浏览器会冻结后台页面的定时器，导致 initCloud 失败后的 30s 重试失效；
+   且切回前台时的既有监听只在「已连接」状态下触发 pullLoop，离线态下切回前台不会重连。
+   这里补上：页面回到前台/获得焦点时，若仍处于离线态则自动重新 initCloud（10s 节流防锤击），
+   解决「手机上一直显示离线·本地，必须手动刷新才能恢复」的问题。 */
+var _lastReconnect=0;
+function autoReconnect(){
+  if(_cloudReady||_cloudLoading)return;
+  var now=Date.now(); if(now-_lastReconnect<10000)return; _lastReconnect=now;
+  initCloud();
+}
+document.addEventListener("visibilitychange",function(){ if(document.visibilityState==="visible") autoReconnect(); });
+window.addEventListener("focus",autoReconnect);
 async function initCloud(){
   if(_initRetryTimer){clearInterval(_initRetryTimer);_initRetryTimer=null;}
   _cloudLoading=true; try{refreshAll();}catch(e){} // 同步进行中：知识库/训练列表空态改为「正在同步」提示，避免误导用户以为数据丢了
