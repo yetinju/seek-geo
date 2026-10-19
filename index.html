@@ -2415,7 +2415,15 @@ function saveArticleFromGen(){
   var headTitle=extractArticleTitle(lastGen.content);          // 优先用正文里的真实标题
   var useTitle=headTitle||lastGen.title||lastGen.kw||"未命名软文";
   var r={id:uid(),type:"article",title:useTitle,keywords:lastGen.kw,targetEngines:lastGen.engines,tone:lastGen.tone,length:lastGen.len||800,status:"待发布",publishDate:TODAY,indexedEngines:[],content:lastGen.content,notes:"",kbRefId:lastGen.kbRefId||"",createdAt:TODAY,updatedAt:nowStr()};
-  recs.push(r);setRecords(recs);libPage=1;refreshAll();
+  recs.push(r);setRecords(recs);libPage=1;
+  // 关键修复：软文库默认只显示 libCat 分类（初始为首个分类「实测/评测报告」），
+  // 若刚存入文章的 tone 不属于当前筛选分类，用户会看到「分类下还没有软文」，
+  // 误以为没存进去。存入后自动切到该文章所属分类，确保立即可见。
+  libCat=r.tone||libCat;libFrom="";libTo="";
+  var df=$("#libDateFrom"),dt=$("#libDateTo");if(df)df.value="";if(dt)dt.value="";
+  var se=$("#libSearch");if(se)se.value="";
+  var ee=$("#libEngine");if(ee)ee.value="";
+  refreshAll();
   toast("已存入软文库");switchTab("lib");
 }
 
