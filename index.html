@@ -2111,7 +2111,7 @@ function renderProds(){
     if(ar)ar.addEventListener("click",function(){
       fillProdSelects(); // 先确保产品下拉选项包含最新产品（新增后未刷新选项时 value 赋值会静默失败）
       libProduct=id;var lp=$("#libProduct");if(lp)lp.value=id;
-      libCat=LIB_CATS[0]; // 跳转软文库并落在第一个分类下
+      libCat=""; // 跳转软文库并落在「全部」分类下
       // 清掉其它可能挡住结果的筛选（保留产品筛选）
       libFrom="";libTo="";
       var df=$("#libDateFrom"),dt=$("#libDateTo");if(df)df.value="";if(dt)dt.value="";
