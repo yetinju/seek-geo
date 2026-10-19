@@ -2384,7 +2384,9 @@ function renderHome(){
 function renderLib(){
   var recs=getRecords().filter(function(r){return r.type==="article";});
   var en=$("#libEngine").value,q=$("#libSearch").value.trim().toLowerCase();
-  var lpSel=$("#libProduct");var lp=lpSel?lpSel.value:(libProduct||"");
+  var lpSel=$("#libProduct");
+  // DOM 值优先；但选项列表未及时刷新时 DOM 值可能为空，此时回退到全局 libProduct，避免程序化设置的产品筛选被静默清掉
+  var lp=(lpSel&&lpSel.value)?lpSel.value:(libProduct||"");
   libProduct=lp;
   // 分类按钮高亮：仅在「无搜索词」时反映当前 libCat（默认第一个分类）；搜索时结果跨分类，故不高亮。
   $all("#libFilters .chip-f").forEach(function(btn){
@@ -2405,14 +2407,35 @@ function renderLib(){
   recs.sort(function(a,b){return (b.updatedAt||b.createdAt||"").localeCompare(a.updatedAt||a.createdAt||"");});
   var box=$("#libList");
   if(!recs.length){
-    // 区分「筛选导致为空」与「确实没有软文」：前者要让用户知道是筛选在挡，并给出切换动作
+    // 区分「筛选导致为空」与「确实没有软文」，文案必须精确：
+    // 产品+分类双重筛选时不能断言"该产品没有软文"——可能只是当前分类下没有，其它分类有。
+    var pname=lp?(prodName(lp)||"该产品"):"";
     var why="";
     if(q)why='没有匹配「'+esc(q)+'」的软文。';
-    else if(lp)why='「'+esc(prodName(lp)||"该产品")+'」下还没有软文。';
+    else if(lp&&libCat)why='「'+esc(pname)+'」在「'+esc(libCat)+'」分类下还没有软文。';
+    else if(lp)why='「'+esc(pname)+'」下还没有软文。';
     else if(libCat)why='「'+esc(libCat)+'」分类下还没有软文。';
     else why='还没有软文。';
-    box.innerHTML='<div class="empty-state">'+why+'<br><span class="sub">可尝试切换产品/分类，或去「生成器」生成一篇。</span><button class="btn" id="btnLibToGen">⚡ 去生成器</button></div>';
+    // 产品在其它分类下有软文时，明确告知并给一键切换
+    var others=[];
+    if(lp&&!q){
+      var tmap={};
+      getRecords().forEach(function(r){
+        if(r&&r.type==="article"&&r.productId===lp&&(!libCat||(r.tone||"")!==libCat)){
+          var t=r.tone||"未分类";
+          if(!tmap[t]){tmap[t]=1;others.push(t);}
+        }
+      });
+    }
+    var html='<div class="empty-state">'+why+'<br><span class="sub">可尝试切换分类，或去「生成器」生成一篇。</span>';
+    if(others.length){
+      html+='<div style="margin-top:10px;font-size:13.5px">该产品在 '+others.length+' 个分类下有软文：'+others.map(function(t){return '「'+esc(t)+'」';}).join("、")+'</div>'+
+        '<div><button class="btn ghost sm" id="btnLibAllCat" style="margin-top:10px">查看该产品的全部分类软文</button></div>';
+    }
+    html+='<div><button class="btn" id="btnLibToGen" style="margin-top:16px">⚡ 去生成器</button></div></div>';
+    box.innerHTML=html;
     var bg=$("#btnLibToGen",box);if(bg)bg.addEventListener("click",function(){switchTab("gen");});
+    var ba=$("#btnLibAllCat",box);if(ba)ba.addEventListener("click",function(){libCat="";libPage=1;renderLib();});
     return;
   }
   var total=recs.length;
