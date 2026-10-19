@@ -2105,7 +2105,18 @@ function renderProds(){
     var ed=$(".act-edit",el),dl=$(".act-del",el),ar=$(".act-arts",el);
     if(ed)ed.addEventListener("click",function(){openProdEdit(id);});
     if(dl)dl.addEventListener("click",function(){delProd(id);});
-    if(ar)ar.addEventListener("click",function(){libProduct=id;var lp=$("#libProduct");if(lp)lp.value=id;libPage=1;switchTab("lib");});
+    if(ar)ar.addEventListener("click",function(){
+      fillProdSelects(); // 先确保产品下拉选项包含最新产品（新增后未刷新选项时 value 赋值会静默失败）
+      libProduct=id;var lp=$("#libProduct");if(lp)lp.value=id;
+      libCat=LIB_CATS[0]; // 跳转软文库并落在第一个分类下
+      // 清掉其它可能挡住结果的筛选（保留产品筛选）
+      libFrom="";libTo="";
+      var df=$("#libDateFrom"),dt=$("#libDateTo");if(df)df.value="";if(dt)dt.value="";
+      var se=$("#libSearch");if(se)se.value="";
+      var ee=$("#libEngine");if(ee)ee.value="";
+      libPage=1;
+      switchTab("lib");
+    });
   });
   bindPager(box,"prodPage",renderProds);
 }
