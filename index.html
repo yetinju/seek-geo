@@ -682,7 +682,10 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
           </div>
           <button class="btn sm" id="btnAddKw">＋ 新增关键词</button>
         </div>
-        <div class="field" style="margin:0 0 12px"><input id="kwSearch" placeholder="🔍 搜索关键词…"></div>
+        <div class="filters" style="margin:0 0 12px">
+          <select id="kwProdFilter"><option value="">全部产品</option></select>
+          <input id="kwSearch" placeholder="🔍 搜索关键词…" style="flex:1">
+        </div>
         <div id="kwList"></div>
       </section>
 
@@ -3447,16 +3450,29 @@ function renderKws(){
     var be=$("#btnAddKwEmpty",box);if(be)be.addEventListener("click",openKwAdd);
     return;
   }
+  // 产品筛选下拉：实时重建（产品管理里新增的产品立即可选），保留当前选择
+  var pf=$("#kwProdFilter");
+  if(pf){
+    var curF=pf.value;
+    pf.innerHTML='<option value="">全部产品</option>'+getProds().map(function(p){
+      return '<option value="'+esc(p.id)+'"'+(p.id===curF?" selected":"")+'>'+esc(p.name||"未命名产品")+'</option>';
+    }).join("");
+    if(pf.querySelector('option[value="'+curF+'"]'))pf.value=curF;
+  }
+  var fProd=pf?pf.value:"";
   var q=(kwQ||"").trim().toLowerCase();
-  var list=q?all.filter(function(x){return String(x.word||"").toLowerCase().indexOf(q)>=0;}):all;
-  if(!list.length){box.innerHTML='<div class="empty-state">没有匹配「'+esc(kwQ)+'」的关键词，换个词试试。</div>';return;}
+  var list=all;
+  if(fProd)list=list.filter(function(x){return (x.productId||"")===fProd;});
+  if(q)list=list.filter(function(x){return String(x.word||"").toLowerCase().indexOf(q)>=0;});
+  if(!list.length){box.innerHTML='<div class="empty-state">'+(fProd&&!q?('该产品下还没有关键词，点右上角「新增关键词」并选择所属产品添加。'):'没有匹配「'+esc(kwQ)+'」的关键词，换个词试试。')+'</div>';return;}
   var total=list.length;
   kwPage=Math.min(Math.max(1,kwPage),Math.max(1,Math.ceil(total/PAGE_SIZE)));
   var pageItems=list.slice((kwPage-1)*PAGE_SIZE,kwPage*PAGE_SIZE);
   box.innerHTML='<div class="kw-grid">'+pageItems.map(function(r){
+    var pn=r.productId?(prodName(r.productId)||"未归属产品"):"";
     return '<div class="kw-item" data-id="'+r.id+'">'+
       '<div class="ti">'+esc(r.word||"")+'</div>'+
-      '<div class="meta">🕓 '+(r.at||"—")+'</div>'+
+      '<div class="meta">'+(pn?'<span title="'+esc(pn)+'">'+IC_PROD+' '+esc(pn)+'</span>':'<span style="opacity:.6">'+IC_PROD+' 通用</span>')+' 🕓 '+(r.at||"—")+'</div>'+
       '<div class="acts"><button class="btn ghost sm act-edit">编辑</button><button class="btn danger sm act-del">删除</button></div>'+
     '</div>';
   }).join("")+'</div>'+pagerHTML(total,kwPage,PAGE_SIZE);
@@ -3473,11 +3489,18 @@ function renderKws(){
   });
   bindPager(box,"kwPage",renderKws);
 }
+function kwProdOptions(sel){
+  return '<option value="">通用（不限产品）</option>'+getProds().map(function(p){
+    return '<option value="'+esc(p.id)+'"'+(p.id===sel?" selected":"")+'>'+esc(p.name||"未命名产品")+'</option>';
+  }).join("");
+}
 function openKwAdd(){
   var sheet=$("#sheet");
+  var preProd=(function(){var g=genProduct();return g.productId||"";})(); // 预选生成器当前产品，顺手
   sheet.innerHTML='<h3>新增核心关键词 <button class="x" data-x>×</button></h3>'+
+    '<div class="field"><label>所属产品 <span class="hint">不同产品可维护各自的关键词；「通用」不限产品</span></label><select id="kw_prod">'+kwProdOptions(preProd)+'</select></div>'+
     '<div class="field"><label>关键词 <span class="hint">必填；可用逗号分隔一次添加多个</span></label><input id="kw_word" placeholder="如：主动降噪, 长续航, 通勤好物"></div>'+
-    '<div class="note">💡 添加的关键词会出现在「生成器 → 核心关键词」的下拉选项中，可多选。</div>'+
+    '<div class="note">💡 添加的关键词会出现在「生成器 → 核心关键词」的下拉选项中，可多选；生成器选定产品后，下拉会优先显示该产品与「通用」的关键词。</div>'+
     '<button class="btn" id="kw_save">保存</button>';
   sheet.classList.add("sheet-edit");
   $("#mask").classList.add("show");
@@ -3485,13 +3508,14 @@ function openKwAdd(){
   $("#kw_save").addEventListener("click",function(){
     var raw=$("#kw_word").value.trim();
     if(!raw){toast("请填写关键词");return;}
+    var pid=$("#kw_prod")?$("#kw_prod").value:"";
     var words=raw.split(/[,，、;；]/).map(function(s){return s.trim();}).filter(Boolean);
     var list=getKws(),exist={},added=0,dup=0;
     list.forEach(function(x){exist[String(x.word||"").toLowerCase()]=1;});
     words.forEach(function(w){
       if(exist[w.toLowerCase()]){dup++;return;}
       exist[w.toLowerCase()]=1;
-      list.push({id:uid(),word:w,at:nowStr()});
+      list.push({id:uid(),word:w,productId:pid,at:nowStr()});
       added++;
     });
     setKws(list);closeSheet();renderKws();renderKwMulti();
@@ -3502,6 +3526,7 @@ function openKwEdit(id){
   var r=getKws().filter(function(x){return x.id===id;})[0];if(!r)return;
   var sheet=$("#sheet");
   sheet.innerHTML='<h3>编辑关键词 <button class="x" data-x>×</button></h3>'+
+    '<div class="field"><label>所属产品</label><select id="kw_prod">'+kwProdOptions(r.productId||"")+'</select></div>'+
     '<div class="field"><label>关键词</label><input id="kw_word" value="'+esc(r.word||"")+'"></div>'+
     '<button class="btn" id="kw_save">保存修改</button>';
   sheet.classList.add("sheet-edit");
@@ -3513,7 +3538,9 @@ function openKwEdit(id){
     var list=getKws();
     if(list.some(function(x){return x.id!==id && String(x.word||"").toLowerCase()===w.toLowerCase();})){toast("该关键词已存在");return;}
     var rec=list.filter(function(x){return x.id===id;})[0];if(!rec)return;
-    rec.word=w;rec.updatedAt=nowStr();
+    rec.word=w;
+    rec.productId=$("#kw_prod")?$("#kw_prod").value:"";
+    rec.updatedAt=nowStr();
     setKws(list);closeSheet();renderKws();renderKwMulti();toast("已保存");
   });
 }
@@ -3539,7 +3566,9 @@ function renderKwMulti(){
   if(!box||!panel||!opts)return;
   var boxSel=kwSelected();                 // 内容框始终只显示“已确认”的选择
   var optSel=kwEditing?kwWork:kwSelected(); // 面板勾选反映暂存（未确认不进内容框）
-  var kws=getKws();
+  var gp=genProduct().productId;
+  // 按产品过滤：显示「当前产品的关键词 + 通用关键词」；未选产品时显示全部
+  var kws=getKws().filter(function(r){return !gp||!(r.productId||"")||r.productId===gp;});
   // 已选标签区（仅已确认内容；编辑中的暂存不在此显示）
   if(!boxSel.length){
     box.innerHTML='<span class="kws-ph">点击选择核心关键词…</span>';
@@ -3564,7 +3593,7 @@ function renderKwMulti(){
   }
   // 下拉选项区（写入 #g_kw_opts，底部 取消/重置/确认 为静态 HTML）
   if(!kws.length){
-    opts.innerHTML='<div class="kws-empty">还没有核心关键词，请到「核心关键词」模块添加。</div>';
+    opts.innerHTML='<div class="kws-empty">'+(gp?'该产品下还没有关键词（通用关键词也会显示在这里），可到「核心关键词」模块添加。':'还没有核心关键词，请到「核心关键词」模块添加。')+'</div>';
     return;
   }
   opts.innerHTML=kws.map(function(r){
@@ -3846,6 +3875,7 @@ async function init(){
   // 核心关键词模块：新增按钮（位置与企业画像一致，置于卡片右上角）
   $("#btnAddKw").addEventListener("click",openKwAdd);
   $("#kwSearch").addEventListener("input",function(){kwQ=this.value||"";kwPage=1;renderKws();});
+  $("#kwProdFilter").addEventListener("change",function(){kwPage=1;renderKws();});
   // 生成器「核心关键词」多选下拉：展开/收起 + 点击外部自动收起 + 底部 取消/重置/确认
   (function(){
     var wrap=$("#g_kw_multi");if(!wrap)return;
@@ -3893,6 +3923,8 @@ async function init(){
         }
       }
     }
+    // 切换产品后刷新核心关键词下拉（只显示该产品 + 通用关键词）
+    renderKwMulti();
   });
   // filters
   ["#libEngine","#libProduct","#libSearch"].forEach(function(s){$(s).addEventListener("input",function(){libPage=1;renderLib();});});
