@@ -622,7 +622,6 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
             <option value="">全部引擎</option>
           </select>
           <select id="libProduct">
-            <option value="">全部产品</option>
           </select>
           <span class="lib-date-group">
             <input id="libDateFrom" type="date" class="lib-date" title="生成日期（起）">
@@ -633,6 +632,7 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
           <input id="libSearch" placeholder="搜索标题/关键词" style="flex:0 1 440px;min-width:140px;max-width:480px">
         </div>
         <div class="kb-filters" id="libFilters">
+          <button class="chip-f" data-cat="">全部</button>
           <button class="chip-f" data-cat="实测/评测报告">实测/评测报告</button>
           <button class="chip-f" data-cat="避坑/风险警示">避坑/风险警示</button>
           <button class="chip-f" data-cat="选型/采购指南">选型/采购指南</button>
@@ -2222,9 +2222,10 @@ function fillProdSelects(){
   var lp=$("#libProduct");
   if(lp){
     var cur=lp.value||libProduct;
-    lp.innerHTML=prodOptionsHTML("",true,"全部产品");
+    lp.innerHTML=prodOptionsHTML("",false); // 不提供「全部产品」选项：必须选定一个具体产品
     var has=Array.prototype.some.call(lp.options,function(o){return o.value===cur;});
-    lp.value=(cur&&has)?cur:"";
+    // 无「全部产品」项，回退时选第一个产品（无产品时保持空=不过滤）
+    lp.value=(cur&&has)?cur:(lp.options.length?lp.options[0].value:"");
     libProduct=lp.value;
   }
 }
@@ -2757,8 +2758,11 @@ function resetLibFilters(){
   var df=$("#libDateFrom"),dt=$("#libDateTo");if(df)df.value="";if(dt)dt.value="";
   var se=$("#libSearch");if(se)se.value="";
   var ee=$("#libEngine");if(ee)ee.value="";
-  libProduct="";
-  var lp=$("#libProduct");if(lp)lp.value="";
+  // 无「全部产品」选项：重置时选定第一个产品（无产品时为空=不过滤）
+  fillProdSelects();
+  var lp=$("#libProduct");
+  if(lp&&lp.options.length)lp.value=lp.options[0].value;
+  libProduct=(lp&&lp.value)?lp.value:"";
   libPage=1;
 }
 
