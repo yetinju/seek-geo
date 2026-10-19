@@ -524,6 +524,7 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
       <button data-tab="gen" class="active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3 1.9 4.5L18 9l-4.1 1.5L12 15l-1.9-4.5L6 9l4.1-1.5L12 3Z"/><path d="M19 14l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8.8-2Z"/></svg>生成器</button>
       <button data-tab="lib"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/></svg>软文库</button>
       <button data-tab="ent"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-6h6v6"/></svg>企业画像</button>
+      <button data-tab="prod"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>产品管理</button>
       <button data-tab="kws"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4 12 22l-9-9V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z"/><circle cx="7.5" cy="7.5" r="1.5"/></svg>核心关键词</button>
       <button data-tab="kb"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/></svg>企业知识库</button>
       <button data-tab="train"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>文章训练</button>
@@ -562,8 +563,10 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
             <select id="g_ent"><option value="">不关联</option></select>
           </div>
           <div class="field">
-            <label>产品名 <span class="hint">必填</span></label>
-            <input id="g_title" placeholder="如：XX 降噪耳机 / 夏季露营装备" value="功率分析仪">
+            <label>产品名 <span class="hint">必填，选项来自「产品管理」</span></label>
+            <select id="g_title"></select>
+            <input id="g_title_custom" placeholder="临时产品名（未建档时使用）" style="display:none">
+            <div class="hint" id="g_title_tip" style="margin-top:6px"></div>
           </div>
           <div class="field">
             <label>核心关键词 <span class="hint">可多选，选项来自「核心关键词」模块</span></label>
@@ -618,6 +621,9 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
           <select id="libEngine">
             <option value="">全部引擎</option>
           </select>
+          <select id="libProduct">
+            <option value="">全部产品</option>
+          </select>
           <span class="lib-date-group">
             <input id="libDateFrom" type="date" class="lib-date" title="生成日期（起）">
             <span class="lib-date-sep">至</span>
@@ -649,6 +655,22 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
           <button class="btn sm" id="btnAddEnt">＋ 新增企业画像</button>
         </div>
         <div id="entList"></div>
+      </section>
+
+      <!-- 产品管理 -->
+      <section class="panel" id="p_prod">
+        <div class="card head">
+          <div>
+            <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>产品管理</h3>
+            <p class="sub">维护企业旗下的产品，挂靠在「企业画像」下。这里的名称会作为「生成器 → 产品名」下拉与「软文库 → 产品筛选」的选项来源。</p>
+          </div>
+          <button class="btn sm" id="btnAddProd">＋ 新增产品</button>
+        </div>
+        <div class="filters" id="prodFilterBar">
+          <select id="prodEntFilter"><option value="">全部企业</option></select>
+          <input id="prodSearch" placeholder="搜索产品名" style="flex:0 1 300px;min-width:140px">
+        </div>
+        <div id="prodList"></div>
       </section>
 
       <!-- 核心关键词 -->
@@ -857,6 +879,7 @@ function localISO(d){
   return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())+" "+p(d.getHours())+":"+p(d.getMinutes())+":"+p(d.getSeconds());
 }
 var libPage=1,entPage=1,kbPage=1,trainPage=1,specPage=1,kbCat="公司信息",libCat="实测/评测报告",PAGE_SIZE=10,trainSel={},trainCat="实测/评测报告",specCat="",libFrom="",libTo="";
+var libProduct="",prodPage=1; // 软文库按产品筛选（空=全部产品）；产品管理分页
 var qcPage=1,qcLogPage=1,qcSelId=null,qcCat="",qcSearch="",qcLogs=lsGet("qc_logs",[]),lastQc=null;
 function setQcLogs(a){qcLogs=a||[];lsSet("qc_logs",qcLogs);}
 var KB_CATS=["公司信息","产品介绍","产品信息","客户案例"];
@@ -979,7 +1002,7 @@ var SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFz
 var _db=null,_cloudReady=false,_suppressSave=false,_saveTimer=null,_lastCfgTs=null,_initRetryTimer=null,_bc=null,_pollTimer=null,_keepAliveTimer=null,_syncing=false,_cloudTomb={},_cloudLastErr="",_cloudStopped=false,_kbSynced=lsGet("kbsync",{}),_recSynced=lsGet("recsync",{});
 /* 多表存储：每个模块对应一张表，行 id = 模块内条目 id（知识库/文章训练等大内容每篇一个独立行），彻底隔离、可按模块独立同步。
    配置与墓碑为单例行（id="default"）。旧版单表 geo_store 的数据由 migrateFromLegacy 在首次同步时从本机当前状态幂等迁移，不破坏现有数据。 */
-var TBL={records:"geo_records",train:"geo_train",ents:"geo_ents",specs:"geo_specs",kb:"geo_kb",cfg:"geo_cfg",tomb:"geo_tomb",backup:"geo_backup"};
+var TBL={records:"geo_records",train:"geo_train",ents:"geo_ents",prods:"geo_products",specs:"geo_specs",kb:"geo_kb",cfg:"geo_cfg",tomb:"geo_tomb",backup:"geo_backup"};
 var CLOUD_BK_ID="default"; // geo_backup 固定单行 id：云端始终只保留一份最新快照，避免多次上传产生多行/孤儿行导致与本地、与其他表不一致
 /* 合并本地与云端数组：按 id 取并集，本地独有保留、云端独有/同 id 覆盖；无 id 的项按内容去重。绝不丢失任一方数据。 */
 function mergeArr(a,b){
@@ -1065,7 +1088,7 @@ async function bkPrune(keep){
   catch(e){}
 }
 function buildSnapshot(){
-  return {records:getRecords(),ents:getEnts(),kws:getKws(),kb:getKB(),train:getTrain(),specs:getSpecs(),cfg:getCfg(),qc_logs:lsGet("qc_logs",[]),tomb:getTomb(),train_spec:getTrainSpec()};
+  return {records:getRecords(),ents:getEnts(),prods:getProds(),kws:getKws(),kb:getKB(),train:getTrain(),specs:getSpecs(),cfg:getCfg(),qc_logs:lsGet("qc_logs",[]),tomb:getTomb(),train_spec:getTrainSpec()};
 }
 function scheduleSnapshot(){if(_snapTimer)clearTimeout(_snapTimer);_snapTimer=setTimeout(function(){saveSnapshot("自动");},8000);}
 async function saveSnapshot(note,force){
@@ -1078,7 +1101,7 @@ async function saveSnapshot(note,force){
       var all=await bkAll();
       if(all.length){
         all.sort(function(a,b){return (b.id||0)-(a.id||0);});
-        var sig=function(o){try{return JSON.stringify({r:o.records,e:o.ents,k:o.kws,kb:o.kb,t:o.train,sp:o.specs,c:o.cfg,q:o.qc_logs,to:o.tomb,ts:o.train_spec});}catch(e){return "";};};
+        var sig=function(o){try{return JSON.stringify({r:o.records,e:o.ents,p:o.prods,k:o.kws,kb:o.kb,t:o.train,sp:o.specs,c:o.cfg,q:o.qc_logs,to:o.tomb,ts:o.train_spec});}catch(e){return "";};};
         if(sig(all[0])===sig(snap)){ return; }
       }
     }
@@ -1091,7 +1114,7 @@ async function restoreSnapshot(id){
   var snap=await bkGet(id);if(!snap){toast("该备份不存在");return;}
   _suppressSave=true;
   try{
-    setRecords(snap.records||[]);setEnts(snap.ents||[]);setKws(snap.kws||[]);setKB(snap.kb||[]);
+    setRecords(snap.records||[]);setEnts(snap.ents||[]);setProds(snap.prods||[]);setKws(snap.kws||[]);setKB(snap.kb||[]);
     setTrain(snap.train||[]);setSpecs(snap.specs||[]);setCfg(snap.cfg||{});setQcLogs(snap.qc_logs||[]);setTomb(snap.tomb||{});
     if(snap.train_spec)setTrainSpec(snap.train_spec);
     // 关键修复：快照中仍存在的 id 必须从墓碑中剔除（含内存中的云端墓碑缓存 _cloudTomb），
@@ -1100,6 +1123,7 @@ async function restoreSnapshot(id){
     var alive=[];
     (snap.records||[]).forEach(function(x){if(x&&x.id)alive.push(x.id);});
     (snap.ents||[]).forEach(function(x){if(x&&x.id)alive.push(x.id);});
+    (snap.prods||[]).forEach(function(x){if(x&&x.id)alive.push(x.id);});
     (snap.train||[]).forEach(function(x){if(x&&x.id)alive.push(x.id);});
     (snap.specs||[]).forEach(function(x){if(x&&x.id)alive.push(x.id);});
     (snap.kb||[]).forEach(function(x){if(x&&x.id)alive.push(x.id);});
@@ -1284,6 +1308,7 @@ async function syncToCloud(opts){
     var changed=false;
     changed=(await syncColl(TBL.records,getRecords,setRecords))||changed; // 软文库
     changed=(await syncColl(TBL.ents,getEnts,setEnts))||changed;           // 企业画像
+    changed=(await syncColl(TBL.prods,getProds,setProds))||changed;       // 产品（geo_products 表未建时静默跳过）
     changed=(await syncColl(TBL.specs,getSpecs,setSpecs))||changed;       // 风格规范
     changed=(await syncKbToCloud())||changed;                             // 知识库（每篇独立行，含完整正文）
     changed=(await syncTrainToCloud())||changed;                         // 文章训练范文（每篇独立行，含完整正文）
@@ -1329,6 +1354,7 @@ async function loadFromCloud(){
     // 如需从旧表补救数据，可手动调用 syncLegacyStore()（它仍保留且幂等）。
     await applyColl(TBL.records,getRecords,setRecords);
     await applyColl(TBL.ents,getEnts,setEnts);
+    await applyColl(TBL.prods,getProds,setProds);
     await applyColl(TBL.specs,getSpecs,setSpecs);
     await fetchKbToLocal();            // 知识库每篇独立行，按需回填完整正文
     await fetchTrainToLocal();         // 文章训练每篇独立行，按需回填完整正文（务必执行：修复云端122篇拉不回本地）
@@ -1477,6 +1503,7 @@ async function pullLoop(){
       }
       await applyColl(TBL.records,getRecords,setRecords);
       await applyColl(TBL.ents,getEnts,setEnts);
+      await applyColl(TBL.prods,getProds,setProds);
       await applyColl(TBL.specs,getSpecs,setSpecs);
     }
     await fetchKbToLocal();
@@ -1516,6 +1543,7 @@ function countWords(str){
   return cn+en+num;
 }
 var IC_DOC='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>';
+var IC_PROD='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:13px;height:13px"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>';
 
 function statusClass(type,st){
   var i=ART_STATUS.indexOf(st);return "st s"+i;
@@ -1532,6 +1560,31 @@ function seedIfEmpty(){
 /* ============ 企业画像 ============ */
 function getEnts(){return lsGet("ent",[]);}
 function setEnts(e){lsSet("ent",e);}
+
+/* ============ 产品管理 ============ */
+/* 产品：挂在企业画像下的极简实体（entId 关联），仅维护名称。
+   文章通过 productId 关联产品（用 id 而非名称，保证产品改名后历史文章不会失联）。 */
+function getProds(){return lsGet("prod",[]);}
+function setProds(a){lsSet("prod",Array.isArray(a)?a:[]);}
+function prodById(id){if(!id)return null;var l=getProds();for(var i=0;i<l.length;i++){if(l[i]&&l[i].id===id)return l[i];}return null;}
+function prodName(id){var p=prodById(id);return p?(p.name||""):"";}
+function normProdName(s){return String(s||"").replace(/\s+/g," ").trim().toLowerCase();}
+/* 同企业下不允许重名（不同企业可各有一个「功率分析仪」）；exceptId 用于编辑时排除自身 */
+function prodExists(name,entId,exceptId){
+  var n=normProdName(name);
+  return getProds().some(function(p){
+    return p&&p.id!==exceptId&&(p.entId||"")===(entId||"")&&normProdName(p.name)===n;
+  });
+}
+/* 统一下拉选项 HTML：withAll=true 时首项为「全部产品」 */
+function prodOptionsHTML(selId,withAll,allText,entId){
+  var ps=getProds().filter(function(p){return !entId||(p.entId||"")===entId;}).slice();
+  ps.sort(function(a,b){return String(a.name||"").localeCompare(String(b.name||""),"zh");});
+  var h=withAll?('<option value="">'+(allText||"全部产品")+'</option>'):"";
+  return h+ps.map(function(p){
+    return '<option value="'+esc(p.id)+'"'+(p.id===selId?" selected":"")+'>'+esc(p.name||"未命名产品")+'</option>';
+  }).join("");
+}
 var _kbMem=lsGet("kbl",[])||[]; // 知识库完整内容驻留内存（云端为唯一真相源）；localStorage 仅持久化轻量元数据，规避微信端 localStorage 配额（约5MB）超限导致清理缓存后无法恢复
 var _cloudLoading=false; // 首次云端同步进行中标志：列表空态据此显示「正在同步」而非「还是空的」
 function stripKbHeavy(d){if(!d)return d;var MAX=1*1024*1024;function trim(s){return (typeof s==="string"&&s.length>MAX)?s.slice(0,MAX):s;}return {id:d.id,name:d.name,type:d.type||"",size:d.size||0,uploadedAt:d.uploadedAt||"",category:d.category||"",kind:d.kind||"",preview:(d.text||"").slice(0,500),html:trim(d.html),text:trim(d.text),data:(typeof d.data==="string"&&d.data.length>MAX)?null:d.data};} // 端侧持久化完整 html/text/data(单文档≤1MB，超出仍只存预览)，避免未联网/同步失败时刷新丢内容；云端仍为主同步源
@@ -1659,8 +1712,8 @@ async function ensureTopKbBodies(){
   var kbs=getKB()||[];
   if(!kbs.length)return;
   if(!_cloudReady||!_db)return; // 离线/未连云端：用本地已有正文，topKbDocs 内已做 name+分类降级
-  // 与 buildPrompt 同口径取主题文本（标题+关键词+卖点）
-  var title=$("#g_title")?$("#g_title").value.trim():"";
+  // 与 buildPrompt 同口径取主题文本（产品名+关键词+卖点）；产品名可能是下拉或自定义输入
+  var title=genProduct().title;
   var kw=$("#g_kw")?$("#g_kw").value.trim():"";
   var sell=$("#g_sell")?$("#g_sell").value.trim():"";
   var topic=(title+" "+(kw||"")+" "+(sell||"")).trim();
@@ -1995,6 +2048,225 @@ function openEntAdd(){
   });
 }
 
+/* ============ 产品管理 ============ */
+/* 统计某产品下的软文数（实时计算，避免存计数导致删除文章后漂移） */
+function prodArticleCount(pid){
+  if(!pid)return 0;
+  return getRecords().filter(function(r){return r&&r.type==="article"&&r.productId===pid;}).length;
+}
+function renderProds(){
+  var box=$("#prodList");if(!box)return;
+  var ef=$("#prodEntFilter");
+  var entFilter=ef?ef.value:"";
+  // 企业筛选下拉：按企业画像实时重建，保留当前选择
+  if(ef){
+    ef.innerHTML='<option value="">全部企业</option>'+getEnts().map(function(e){
+      return '<option value="'+esc(e.id)+'"'+(e.id===entFilter?" selected":"")+'>'+esc(e.name)+'</option>';
+    }).join("");
+    if(ef.querySelector('option[value="'+entFilter+'"]'))ef.value=entFilter;
+  }
+  var all=getProds();
+  if(!all.length){
+    box.innerHTML='<div class="empty-state"><div class="es-ic">📦</div><p>还没有产品</p><span class="sub">先新增产品，之后「生成器」的产品名与「软文库」的筛选就能直接下拉选择。</span><button class="btn" id="btnAddProdEmpty">＋ 新增产品</button></div>';
+    var be=$("#btnAddProdEmpty",box);if(be)be.addEventListener("click",openProdAdd);
+    return;
+  }
+  var list=all.slice();
+  if(entFilter)list=list.filter(function(p){return (p.entId||"")===entFilter;});
+  var q=$("#prodSearch")?$("#prodSearch").value.trim().toLowerCase():"";
+  if(q)list=list.filter(function(p){return String(p.name||"").toLowerCase().indexOf(q)>=0;});
+  list.sort(function(a,b){return (b.updatedAt||b.createdAt||"").localeCompare(a.updatedAt||a.createdAt||"");});
+  // 筛选后为空：区分「该企业下没有产品」与「搜索无结果」
+  if(!list.length){
+    box.innerHTML='<div class="empty-state">'+(q?('没有匹配「'+esc(q)+'」的产品。'):'所选企业下还没有产品。')+'<br><span class="sub">可切换筛选条件，或点右上角「新增产品」添加。</span></div>';
+    return;
+  }
+  var total=list.length;
+  prodPage=Math.min(Math.max(1,prodPage),Math.max(1,Math.ceil(total/PAGE_SIZE)));
+  var pageItems=list.slice((prodPage-1)*PAGE_SIZE,prodPage*PAGE_SIZE);
+  box.innerHTML=pageItems.map(function(p){
+    var ent=getEnts().filter(function(x){return x.id===p.entId;})[0];
+    var cnt=prodArticleCount(p.id);
+    return '<div class="item" data-id="'+esc(p.id)+'">'+
+      '<div class="top"><div class="ti">'+esc(p.name||"未命名产品")+'</div>'+
+        (ent?'<span class="chip">'+esc(ent.name)+'</span>':'<span class="chip">未归属企业</span>')+'</div>'+
+      '<div class="meta"><span class="meta-main">'+
+        '<span>'+IC_PROD+' 关联软文 '+cnt+' 篇</span>'+
+        '<span>🕓 '+(p.updatedAt?('更新于 '+esc(fmtTime(p.updatedAt,p.createdAt))):('创建于 '+esc(fmtTime(p.createdAt))))+'</span>'+
+      '</span></div>'+
+      '<div class="acts">'+
+        (cnt?'<button class="btn ghost sm act-arts">查看软文</button>':'')+
+        '<button class="btn ghost sm act-edit">编辑</button>'+
+        '<button class="btn danger sm act-del">删除</button></div>'+
+    '</div>';
+  }).join("")+pagerHTML(total,prodPage,PAGE_SIZE);
+  $all(".item",box).forEach(function(el){
+    var id=el.getAttribute("data-id");
+    var ed=$(".act-edit",el),dl=$(".act-del",el),ar=$(".act-arts",el);
+    if(ed)ed.addEventListener("click",function(){openProdEdit(id);});
+    if(dl)dl.addEventListener("click",function(){delProd(id);});
+    if(ar)ar.addEventListener("click",function(){libProduct=id;var lp=$("#libProduct");if(lp)lp.value=id;libPage=1;switchTab("lib");});
+  });
+  bindPager(box,"prodPage",renderProds);
+}
+function prodFields(){
+  return {
+    name:$("#p2_name").value.trim(),
+    entId:$("#p2_ent")?$("#p2_ent").value:""
+  };
+}
+function prodEntOptions(sel){
+  return '<option value="">不归属企业</option>'+getEnts().map(function(e){
+    return '<option value="'+esc(e.id)+'"'+(e.id===sel?" selected":"")+'>'+esc(e.name)+'</option>';
+  }).join("");
+}
+function openProdAdd(){
+  var sheet=$("#sheet");
+  sheet.innerHTML='<h3>新增产品 <button class="x" data-x>×</button></h3>'+
+    '<div class="field"><label>所属企业 <span class="hint">决定生成器里按企业收窄的归属</span></label><select id="p2_ent">'+prodEntOptions($("#g_ent")?$("#g_ent").value:"")+'</select></div>'+
+    '<div class="field"><label>产品名称 <span class="hint">必填，同一企业下不可重名</span></label><input id="p2_name" placeholder="如：功率分析仪"></div>'+
+    '<button class="btn" id="p2_save">＋ 保存产品</button>';
+  $("#mask").classList.add("show");
+  $("[data-x]",sheet).addEventListener("click",closeSheet);
+  $("#p2_save").addEventListener("click",function(){
+    var f=prodFields();
+    if(!f.name){toast("请填写产品名称");return;}
+    if(prodExists(f.name,f.entId,null)){toast("该企业下已有同名产品");return;}
+    var ps=getProds();
+    ps.push({id:uid(),name:f.name,entId:f.entId,createdAt:TODAY,updatedAt:nowStr()});
+    prodPage=1;setProds(ps);closeSheet();fillProdSelects();renderProds();toast("已保存产品");
+  });
+}
+function openProdEdit(id){
+  var p=prodById(id);if(!p)return;
+  var sheet=$("#sheet");
+  sheet.innerHTML='<h3>编辑产品 <button class="x" data-x>×</button></h3>'+
+    '<div class="field"><label>所属企业</label><select id="p2_ent">'+prodEntOptions(p.entId||"")+'</select></div>'+
+    '<div class="field"><label>产品名称 <span class="hint">必填，同一企业下不可重名</span></label><input id="p2_name" value="'+esc(p.name||"")+'"></div>'+
+    '<div class="hint" style="margin-bottom:12px">改名后，已归属该产品的 '+prodArticleCount(id)+' 篇软文会自动跟随新名称（文章按 ID 关联，不会失联）。</div>'+
+    '<button class="btn" id="p2_save">保存修改</button>';
+  $("#mask").classList.add("show");
+  $("[data-x]",sheet).addEventListener("click",closeSheet);
+  $("#p2_save").addEventListener("click",function(){
+    var f=prodFields();
+    if(!f.name){toast("请填写产品名称");return;}
+    if(prodExists(f.name,f.entId,id)){toast("该企业下已有同名产品");return;}
+    var ps=getProds();
+    var rec=ps.filter(function(x){return x.id===id;})[0];if(!rec)return;
+    rec.name=f.name;rec.entId=f.entId;rec.updatedAt=nowStr();
+    setProds(ps);closeSheet();fillProdSelects();renderProds();toast("已保存");
+  });
+}
+function delProd(id){
+  var p=prodById(id);if(!p)return;
+  var n=prodArticleCount(id);
+  var msg="确定删除产品「"+(p.name||"")+"」？";
+  if(n)msg+="\n\n已有 "+n+" 篇软文归属它，删除后这些文章会显示为「未归属产品」，文章本身不会被删除。";
+  if(!confirm(msg))return;
+  setProds(getProds().filter(function(x){return x.id!==id;}));
+  addTomb(id); // 跨端删除生效
+  if(_cloudReady)syncToCloud({silent:true});
+  fillProdSelects();renderProds();refreshAll();toast("已删除产品");
+}
+/* 生成器产品下拉：按当前关联企业收窄；无产品时降级为自定义输入，绝不阻断生成 */
+function fillProdSelect(){
+  var sel=$("#g_title");if(!sel)return;
+  var cu=$("#g_title_custom"),tip=$("#g_title_tip");
+  var all=getProds();
+  if(!all.length){
+    // 无产品档案：隐藏下拉，显示自定义输入，并给出建档引导
+    sel.style.display="none";
+    sel.innerHTML='<option value=""></option>';
+    if(cu)cu.style.display="";
+    if(tip)tip.innerHTML='还没有产品档案，可直接输入临时产品名生成；<a href="javascript:void 0" data-goprod="1" style="color:var(--brand);text-decoration:underline">去「产品管理」建档</a>后即可下拉选择。';
+    if(tip&&!tip._bound){
+      tip._bound=1;
+      tip.addEventListener("click",function(e){
+        var a=e.target.closest?e.target.closest("[data-goprod]"):null;
+        if(a){e.preventDefault();switchTab("prod");}
+      });
+    }
+    return;
+  }
+  var entId=$("#g_ent")?$("#g_ent").value:"";
+  var ps=all.filter(function(p){return !entId||!(p.entId)||p.entId===entId;});
+  if(!ps.length)ps=all.slice(); // 该企业下没有产品时，回退显示全部，避免空下拉
+  var cur=sel.value;
+  sel.style.display="";
+  if(cu)cu.style.display="none";
+  if(tip)tip.innerHTML="";
+  sel.innerHTML=ps.map(function(p){
+    return '<option value="'+esc(p.id)+'">'+esc(p.name||"未命名产品")+'</option>';
+  }).join("")+'<option value="__custom__">＋ 自定义产品名…</option>';
+  // 保留原选择；原选择已不存在（如切换了企业）时回退第一项
+  if(cur&&cur!=="__custom__"&&ps.some(function(p){return p.id===cur;}))sel.value=cur;
+  else sel.value=ps[0].id;
+}
+/* 统一填充所有产品下拉：生成器 + 软文库筛选 */
+function fillProdSelects(){
+  fillProdSelect();
+  var lp=$("#libProduct");
+  if(lp){
+    var cur=lp.value||libProduct;
+    lp.innerHTML=prodOptionsHTML("",true,"全部产品");
+    var has=Array.prototype.some.call(lp.options,function(o){return o.value===cur;});
+    lp.value=(cur&&has)?cur:"";
+    libProduct=lp.value;
+  }
+}
+/* 读取生成器当前选择的产品：返回 {title 名称, productId 产品ID}。
+   自定义输入时 productId 为空（该文章不归属任何产品）。 */
+function genProduct(){
+  var sel=$("#g_title"),cu=$("#g_title_custom");
+  var v=sel?sel.value:"";
+  if(v&&v!=="__custom__"){var p=prodById(v);return {title:p?(p.name||""):"",productId:v};}
+  return {title:(cu?cu.value.trim():""),productId:""};
+}
+/* 一次性迁移：历史软文（无 productId）统一归属「功率分析仪」。
+   幂等保证：① 本地标记 prod_mig1 存在直接返回；② 只回填 productId 为空的文章，绝不覆盖用户后续修改；
+   ③ 写入后立刻落标记，即使本次无匹配也不再重复执行。 */
+function migrateProductsOnce(){
+  try{
+    if(lsGet("prod_mig1",null))return;
+    var prods=getProds(),recs=getRecords(),ents=getEnts();
+    // 1) 确保「功率分析仪」产品存在，优先挂到仪器仪表/名称含凌茂的企业
+    var p=prods.filter(function(x){return normProdName(x.name)==="功率分析仪";})[0];
+    if(!p){
+      var main=ents.filter(function(e){return (e.industry||"").indexOf("仪器仪表")>=0||/凌茂/.test(e.name||"");})[0]||ents[0]||null;
+      p={id:uid(),name:"功率分析仪",entId:main?main.id:"",createdAt:TODAY,updatedAt:nowStr()};
+      prods.push(p);
+    }else if(!p.entId&&ents.length){
+      // 已存在但当时企业画像尚未从云端拉回导致未归属：补一次归属（只在为空时补，不覆盖用户手动改动）
+      var main2=ents.filter(function(e){return (e.industry||"").indexOf("仪器仪表")>=0||/凌茂/.test(e.name||"");})[0]||ents[0];
+      if(main2){p.entId=main2.id;p.updatedAt=nowStr();}
+    }
+    // 2) 只回填没有 productId 的文章；保持 updatedAt 不变，避免打乱既有排序
+    var hit=0;
+    recs=recs.map(function(r){
+      if(r&&r.type==="article"&&!r.productId){
+        hit++;
+        var o={};for(var k in r)o[k]=r[k];
+        o.productId=p.id;
+        return o;
+      }
+      return r;
+    });
+    if(hit)setRecords(recs);
+    // 产品列表确有变化才写回，避免每次 refresh 都触发一次云端保存
+    var isNew=!getProds().some(function(x){return x.id===p.id;});
+    var entPatched=false;
+    if(!isNew){
+      var orig=getProds().filter(function(x){return x.id===p.id;})[0];
+      if(orig&&orig.entId!==p.entId)entPatched=true;
+    }
+    if(isNew||entPatched)setProds(prods);
+    // 没拿到企业画像（云端尚未拉回）时不落标记，等下次 refreshAll 重试，把产品归属补上
+    if(!p.entId&&!ents.length)return;
+    lsSet("prod_mig1",{at:nowStr(),pid:p.id,n:hit});
+    if(hit)console.log("migrateProductsOnce: "+hit+" 篇历史软文已归属「"+p.name+"」");
+  }catch(e){console.warn("migrateProductsOnce failed",e);}
+}
+
 /* ============ 渲染引擎复选 ============ */
 function renderEnginePicker(container,selected){
   selected=selected||[];
@@ -2098,6 +2370,8 @@ function renderHome(){
 function renderLib(){
   var recs=getRecords().filter(function(r){return r.type==="article";});
   var en=$("#libEngine").value,q=$("#libSearch").value.trim().toLowerCase();
+  var lpSel=$("#libProduct");var lp=lpSel?lpSel.value:(libProduct||"");
+  libProduct=lp;
   // 分类按钮高亮：仅在「无搜索词」时反映当前 libCat（默认第一个分类）；搜索时结果跨分类，故不高亮。
   $all("#libFilters .chip-f").forEach(function(btn){
     var c=btn.getAttribute("data-cat")||"";
@@ -2105,6 +2379,7 @@ function renderLib(){
   });
   recs=recs.filter(function(r){
     if(en && (r.targetEngines||[]).indexOf(en)<0)return false;
+    if(lp && (r.productId||"")!==lp)return false; // 按产品筛选（空=全部产品）
     // 无搜索词时按当前分类浏览（默认第一个分类）；有搜索词时跨所有分类全局搜索，忽略 libCat。
     if(!q && libCat && (r.tone||"")!==libCat)return false;
     if(q && ((r.title||"")+(r.keywords||"")).toLowerCase().indexOf(q)<0)return false;
@@ -2115,14 +2390,24 @@ function renderLib(){
   });
   recs.sort(function(a,b){return (b.updatedAt||b.createdAt||"").localeCompare(a.updatedAt||a.createdAt||"");});
   var box=$("#libList");
-  if(!recs.length){box.innerHTML='<div class="empty-state">'+(libCat?('「'+libCat+'」分类下还没有软文，去「生成器」用该风格生成，或在编辑里修改分类。'):'还没有软文，去「生成器」生成一篇吧～')+'</div>';return;}
+  if(!recs.length){
+    // 区分「筛选导致为空」与「确实没有软文」：前者要让用户知道是筛选在挡，并给出切换动作
+    var why="";
+    if(q)why='没有匹配「'+esc(q)+'」的软文。';
+    else if(lp)why='「'+esc(prodName(lp)||"该产品")+'」下还没有软文。';
+    else if(libCat)why='「'+esc(libCat)+'」分类下还没有软文。';
+    else why='还没有软文。';
+    box.innerHTML='<div class="empty-state">'+why+'<br><span class="sub">可尝试切换产品/分类，或去「生成器」生成一篇。</span><button class="btn" id="btnLibToGen">⚡ 去生成器</button></div>';
+    var bg=$("#btnLibToGen",box);if(bg)bg.addEventListener("click",function(){switchTab("gen");});
+    return;
+  }
   var total=recs.length;
   libPage=Math.min(Math.max(1,libPage),Math.max(1,Math.ceil(total/PAGE_SIZE)));
   var pageItems=recs.slice((libPage-1)*PAGE_SIZE, libPage*PAGE_SIZE);
   box.innerHTML=pageItems.map(function(r){
     return '<div class="item hasbtns" data-id="'+r.id+'">'+
       '<div class="top top-btns"><div class="ti">'+esc(r.title)+'</div><div class="acts"><button class="btn ghost sm act-view">查看</button><button class="btn ghost sm act-edit">编辑</button><button class="btn ghost sm act-dl">下载</button><button class="btn danger sm act-del">删除</button></div></div>'+
-      '<div class="meta"><span class="meta-main">'+(r.keywords?'<span class="kw">🔑 '+esc(r.keywords)+'</span>':'')+'<span>🎯 '+((r.targetEngines||[]).join("/")||"—")+'</span><span>'+IC_DOC+' '+countWords(r.content)+' 字</span><span>📂 '+esc(r.tone||"未分类")+'</span></span><span class="time">🕓 生成于 '+fmtTime(r.createdAt,r.updatedAt)+'</span></div>'+
+      '<div class="meta"><span class="meta-main">'+(r.keywords?'<span class="kw">🔑 '+esc(r.keywords)+'</span>':'')+'<span>🎯 '+((r.targetEngines||[]).join("/")||"—")+'</span><span>'+IC_DOC+' '+countWords(r.content)+' 字</span><span>📂 '+esc(r.tone||"未分类")+'</span>'+(r.productId?'<span>'+IC_PROD+' '+esc(prodName(r.productId)||"未归属产品")+'</span>':'<span style="opacity:.6">'+IC_PROD+' 未归属产品</span>')+'</span><span class="time">🕓 生成于 '+fmtTime(r.createdAt,r.updatedAt)+'</span></div>'+
     '</div>';
   }).join("")+pagerHTML(total,libPage,PAGE_SIZE);
   bindItemActions(box);
@@ -2207,6 +2492,7 @@ function openEdit(id){
 function articleSheet(r){
   return '<h3>编辑软文 <button class="x" data-x>×</button></h3>'+
   '<div class="field"><label>标题</label><input id="e_title" value="'+esc(r.title)+'"></div>'+
+  '<div class="field"><label>所属产品 <span class="hint">用于软文库按产品筛选</span></label><select id="e_prod"><option value="">未归属产品</option>'+prodOptionsHTML(r.productId||"",false)+'</select></div>'+
   '<div class="field"><label>正文</label><textarea id="e_content" style="min-height:320px">'+esc(r.content||"")+'</textarea></div>'+
   '<button class="btn" id="e_save">保存修改</button>';
 }
@@ -2218,6 +2504,7 @@ function bindSheet(r){
     rec.title=$("#e_title").value.trim()||rec.title;
     if(rec.type==="article"){
       rec.content=$("#e_content").value;
+      var pr=$("#e_prod");if(pr)rec.productId=pr.value||"";
     }
     rec.updatedAt=nowStr();
     setRecords(recs);closeSheet();refreshAll();toast("已保存");
@@ -2248,7 +2535,8 @@ function topKbDocs(kbs,text,n){
   return scored.slice(0,n).map(function(x){return x.d;});
 }
 function buildPrompt(){
-  var title=$("#g_title").value.trim();
+  var _gp=genProduct();
+  var title=_gp.title;
   var kw=$("#g_kw").value.trim();
   var sell=$("#g_sell").value.trim();
   var engines=picked($("#g_engines"));
@@ -2273,7 +2561,8 @@ function buildPrompt(){
     p+="品牌："+ent.name+"\n";
     if(ent.industry)p+="行业："+ent.industry+"\n";
     if(ent.slogan)p+="定位："+ent.slogan+"\n";
-    if(ent.product)p+="核心产品："+ent.product+"\n";
+    // 已通过「产品管理」选定具体产品时，不再重复输出企业画像里的自由文本"核心产品"，避免口径冲突
+    if(ent.product&&!_gp.productId)p+="核心产品："+ent.product+"\n";
     if(ent.audience)p+="目标人群："+ent.audience+"\n";
     if(ent.selling)p+="核心卖点："+ent.selling+"\n";
     if(ent.tone)p+="品牌调性："+ent.tone+"\n";
@@ -2319,7 +2608,7 @@ function buildPrompt(){
   p+="1. 关键词与 SEO：核心关键词「"+(kw||"（主题相关词）")+"」在全文自然出现 3～5 次即可，严禁为堆砌关键词生硬嵌入、严禁重复同一个短语、严禁为凑词破坏语句通顺；关键词只在语义自然处使用。\n";
   p+="2. 对比措辞：涉及与本产品/品牌作对比的其他设备、竞品或「普通/入门」机型时，不得使用绝对化贬损或夸大其劣势的措辞；请改用「常见」「通常」「部分机型」「一般量级」等留有余地、客观的表述，避免把对比对象一概描绘成明显更差。\n";
   p+="\n请直接输出正文。";
-  return {title:title,kw:kw,engines:engines,tone:tone,len:len,prompt:p,ent:ent,kbRefId:kbRefId};
+  return {title:title,kw:kw,engines:engines,tone:tone,len:len,prompt:p,ent:ent,kbRefId:kbRefId,productId:_gp.productId||""};
 }
 
 function setGenLoading(on){
@@ -2380,7 +2669,7 @@ async function doGen(){
   setGenLoading(true);
   try{
     var text=await callLLM(info.prompt);
-    lastGen={title:info.title,kw:info.kw,engines:info.engines,tone:info.tone,content:text,kbRefId:info.kbRefId||null};
+    lastGen={title:info.title,kw:info.kw,engines:info.engines,tone:info.tone,content:text,kbRefId:info.kbRefId||null,productId:info.productId||""};
     $("#genOut").style.display="block";$("#genOut").textContent=text;
     $("#genBar").style.display="flex";
     toast("生成完成");
@@ -2414,17 +2703,26 @@ function saveArticleFromGen(){
   var recs=getRecords();
   var headTitle=extractArticleTitle(lastGen.content);          // 优先用正文里的真实标题
   var useTitle=headTitle||lastGen.title||lastGen.kw||"未命名软文";
-  var r={id:uid(),type:"article",title:useTitle,keywords:lastGen.kw,targetEngines:lastGen.engines,tone:lastGen.tone,length:lastGen.len||800,status:"待发布",publishDate:TODAY,indexedEngines:[],content:lastGen.content,notes:"",kbRefId:lastGen.kbRefId||"",createdAt:TODAY,updatedAt:nowStr()};
+  var r={id:uid(),type:"article",title:useTitle,keywords:lastGen.kw,targetEngines:lastGen.engines,tone:lastGen.tone,length:lastGen.len||800,status:"待发布",publishDate:TODAY,indexedEngines:[],content:lastGen.content,notes:"",kbRefId:lastGen.kbRefId||"",productId:lastGen.productId||"",createdAt:TODAY,updatedAt:nowStr()};
   recs.push(r);setRecords(recs);libPage=1;
   // 关键修复：软文库默认只显示 libCat 分类（初始为首个分类「实测/评测报告」），
-  // 若刚存入文章的 tone 不属于当前筛选分类，用户会看到「分类下还没有软文」，
-  // 误以为没存进去。存入后自动切到该文章所属分类，确保立即可见。
-  libCat=r.tone||libCat;libFrom="";libTo="";
+  // 且可能残留产品/引擎/日期/搜索等筛选，任一条都会让刚存入的文章「看起来没存进去」。
+  // 统一走 resetLibFilters() 收口，保证存入后立即可见。
+  libCat=r.tone||libCat;
+  resetLibFilters();
+  refreshAll();
+  toast("已存入软文库");switchTab("lib");
+}
+/* 统一重置软文库的全部筛选条件（分类以外的筛选）。分类由调用方按需单独设置。
+   收口的意义：此前每新增一个筛选项都要记得在各处手动清空，漏一处就会出现"存入后看不到"。*/
+function resetLibFilters(){
+  libFrom="";libTo="";
   var df=$("#libDateFrom"),dt=$("#libDateTo");if(df)df.value="";if(dt)dt.value="";
   var se=$("#libSearch");if(se)se.value="";
   var ee=$("#libEngine");if(ee)ee.value="";
-  refreshAll();
-  toast("已存入软文库");switchTab("lib");
+  libProduct="";
+  var lp=$("#libProduct");if(lp)lp.value="";
+  libPage=1;
 }
 
 /* ============ 软文质检 / 质检查询 ============ */
@@ -3381,7 +3679,7 @@ function delSpec(id){
 /* ============ 备份 ============ */
 async function exportBackup(){
   if(_cloudReady)await syncToCloud();
-  var data={records:getRecords(),ent:getEnts(),kb:getKB(),train:getTrain(),train_spec:getTrainSpec(),specs:getSpecs(),activeSpecId:getActiveSpecId(),kws:getKws(),tomb:getTomb(),cfg:{apiKey:getCfg().apiKey,baseUrl:getCfg().baseUrl,model:getCfg().model,proxy:getCfg().proxy},exportedAt:new Date().toISOString()};
+  var data={records:getRecords(),ent:getEnts(),prods:getProds(),kb:getKB(),train:getTrain(),train_spec:getTrainSpec(),specs:getSpecs(),activeSpecId:getActiveSpecId(),kws:getKws(),tomb:getTomb(),cfg:{apiKey:getCfg().apiKey,baseUrl:getCfg().baseUrl,model:getCfg().model,proxy:getCfg().proxy},exportedAt:new Date().toISOString()};
   var blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
   var a=document.createElement("a");a.href=URL.createObjectURL(blob);
   a.download="GEO软文备份_"+TODAY+".json";a.click();
@@ -3395,6 +3693,7 @@ function importBackup(file){
       var d=JSON.parse(reader.result);
       if(d.records&&Array.isArray(d.records)){setRecords(mergeArr(getRecords(),d.records));}
       if(Array.isArray(d.ent)){setEnts(mergeArr(getEnts(),d.ent));}
+      if(Array.isArray(d.prods)){setProds(mergeArr(getProds(),d.prods));}
       if(Array.isArray(d.kb)){setKB(fillKbFromCloud(mergeArr(getKB(),d.kb),d.kb));}
       if(Array.isArray(d.train)){setTrain(mergeArr(getTrain(),d.train));}
       if(d.train_spec!==undefined&&d.train_spec){var _ts=getTrainSpec()||{};setTrainSpec(Object.assign({},_ts,d.train_spec));}
@@ -3406,6 +3705,7 @@ function importBackup(file){
       var allIds=[];
       getRecords().forEach(function(x){if(x&&x.id)allIds.push(x.id);});
       getEnts().forEach(function(x){if(x&&x.id)allIds.push(x.id);});
+      getProds().forEach(function(x){if(x&&x.id)allIds.push(x.id);});
       getKB().forEach(function(x){if(x&&x.id)allIds.push(x.id);});
       getTrain().forEach(function(x){if(x&&x.id)allIds.push(x.id);});
       getSpecs().forEach(function(x){if(x&&x.id)allIds.push(x.id);});
@@ -3419,7 +3719,7 @@ function importBackup(file){
 }
 function clearAll(){
   if(!confirm("确定清空全部数据？此操作不可恢复，建议先导出备份。"))return;
-  setRecords([]);setEnts([]);setKB([]);setTrain([]);setTrainSpec(null);setSpecs([]);setActiveSpecId(null);setKws([]);setTomb({});lsSet("seeded",true);
+  setRecords([]);setEnts([]);setProds([]);setKB([]);setTrain([]);setTrainSpec(null);setSpecs([]);setActiveSpecId(null);setKws([]);setTomb({});lsSet("seeded",true);
   refreshAll();toast("已清空");
 }
 
@@ -3446,7 +3746,7 @@ async function testConn(){
   }catch(e){$("#cfgMsg").textContent="❌ "+e.message;}
 }
 
-var TAB_META={gen:{t:"软文生成器",i:'<path d="m12 3 1.9 4.5L18 9l-4.1 1.5L12 15l-1.9-4.5L6 9l4.1-1.5L12 3Z"/><path d="M19 14l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8.8-2Z"/>'},lib:{t:"软文库",i:'<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/>'},ent:{t:"企业画像",i:'<path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-6h6v6"/>'},kws:{t:"核心关键词",i:'<path d="M20.6 13.4 12 22l-9-9V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z"/><circle cx="7.5" cy="7.5" r="1.5"/>'},kb:{t:"企业知识库",i:'<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/>'},train:{t:"文章训练",i:'<path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/>'},spec:{t:"风格规范",i:'<path d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15l-1.9-4.1L5.5 9l4.6-1.4Z"/><path d="M19 14l.9 2.1L22 17l-2.1.9L19 20l-.9-2.1L16 17l2.1-.9Z"/>'},qc:{t:"软文质检",i:'<path d="M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z"/><path d="m21 21-4.3-4.3"/>'},qclog:{t:"质检查询",i:'<path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/>'},set:{t:"系统设置",i:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/>'}};
+var TAB_META={gen:{t:"软文生成器",i:'<path d="m12 3 1.9 4.5L18 9l-4.1 1.5L12 15l-1.9-4.5L6 9l4.1-1.5L12 3Z"/><path d="M19 14l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8.8-2Z"/>'},lib:{t:"软文库",i:'<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/>'},ent:{t:"企业画像",i:'<path d="M3 21h18"/><path d="M5 21V7l7-4 7 4v14"/><path d="M9 21v-6h6v6"/>'},prod:{t:"产品管理",i:'<path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/>'},kws:{t:"核心关键词",i:'<path d="M20.6 13.4 12 22l-9-9V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z"/><circle cx="7.5" cy="7.5" r="1.5"/>'},kb:{t:"企业知识库",i:'<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4 3 9 3s9-1.34 9-3"/>'},train:{t:"文章训练",i:'<path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/>'},spec:{t:"风格规范",i:'<path d="M12 3l1.9 4.6L18.5 9l-4.6 1.9L12 15l-1.9-4.1L5.5 9l4.6-1.4Z"/><path d="M19 14l.9 2.1L22 17l-2.1.9L19 20l-.9-2.1L16 17l2.1-.9Z"/>'},qc:{t:"软文质检",i:'<path d="M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z"/><path d="m21 21-4.3-4.3"/>'},qclog:{t:"质检查询",i:'<path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/>'},set:{t:"系统设置",i:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/>'}};
 /* ============ Tab 切换 ============ */
 function switchTab(tab){
   $all("#nav button").forEach(function(b){b.classList.toggle("active",b.getAttribute("data-tab")===tab);});
@@ -3455,6 +3755,7 @@ function switchTab(tab){
   var m=TAB_META[tab];if(m){var t=$("#topTitle"),ic=$("#topIcon");if(t)t.textContent=m.t;if(ic)ic.innerHTML=m.i;}
   if(tab==="lib")renderLib();
   if(tab==="ent")renderEnt();
+  if(tab==="prod")renderProds();
   if(tab==="kws")renderKws();
   if(tab==="kb")renderKb();
   if(tab==="train")renderTrain();
@@ -3467,7 +3768,8 @@ function switchTab(tab){
 
 /* ============ 刷新 ============ */
 function refreshAll(){
-  renderLib();renderEnt();renderKb();renderTrain();renderSpecs();renderQcLog();fillEntSelect();renderKws();renderKwMulti();
+  migrateProductsOnce(); // 云端企业/产品数据到达后重试迁移（有标记时立即返回，开销可忽略）
+  renderLib();renderEnt();renderProds();renderKb();renderTrain();renderSpecs();renderQcLog();fillEntSelect();fillProdSelects();renderKws();renderKwMulti();
 }
 
 /* ============ 引擎下拉填充 ============ */
@@ -3508,6 +3810,8 @@ async function init(){
   $("#g_tone").innerHTML=LIB_CATS.map(function(c){return '<option value="'+c+'">'+c+'</option>';}).join("");
   fillEngineSelect();
   fillEntSelect();
+  migrateProductsOnce();   // 历史软文一次性归属产品（幂等，带本地标记）
+  fillProdSelects();        // 生成器产品下拉 + 软文库产品筛选
   refreshAll();
   fillCfg();
   backfillTodayBackup();
@@ -3551,14 +3855,41 @@ async function init(){
   })();
   // generator: link enterprise profile
   $("#g_ent").addEventListener("change",function(){
-    var id=this.value;if(!id){return;}
+    var id=this.value;
+    // 切换企业后按该企业收窄产品下拉（无产品时会自动回退为全部，不会出现空下拉）
+    fillProdSelect();
+    if(!id){return;}
     var ent=getEnts().filter(function(x){return x.id===id;})[0];if(!ent)return;
     // 仅自动带入「品牌/产品卖点」；核心关键词不取自企业画像的品牌关键词，
     // 生成器的核心关键词来源固定为「核心关键词」模块用户自行新增的词（自定义多选下拉）。
     if(ent.selling&&!$("#g_sell").value)$("#g_sell").value=ent.selling;
   });
+  // 产品下拉：选「自定义产品名…」时切换为输入框；选了具体产品则自动带出所属企业
+  $("#g_title").addEventListener("change",function(){
+    var v=this.value,cu=$("#g_title_custom");
+    if(v==="__custom__"){ if(cu){cu.style.display="";cu.focus();} }
+    else{
+      if(cu)cu.style.display="none";
+      var p=prodById(v);
+      var ge=$("#g_ent");
+      // 产品归属企业且当前未选企业/选的是别的企业时，自动同步企业画像
+      if(p&&p.entId&&ge&&ge.value!==p.entId){
+        var has=Array.prototype.some.call(ge.options,function(o){return o.value===p.entId;});
+        if(has){
+          ge.value=p.entId;
+          var ent=getEnts().filter(function(x){return x.id===p.entId;})[0];
+          if(ent&&ent.selling&&!$("#g_sell").value&&!String($("#g_sell").value||"").trim())$("#g_sell").value=ent.selling;
+        }
+      }
+    }
+  });
   // filters
-  ["#libEngine","#libSearch"].forEach(function(s){$(s).addEventListener("input",function(){libPage=1;renderLib();});});
+  ["#libEngine","#libProduct","#libSearch"].forEach(function(s){$(s).addEventListener("input",function(){libPage=1;renderLib();});});
+  $("#libProduct").addEventListener("change",function(){libProduct=this.value||"";libPage=1;renderLib();});
+  // 产品管理筛选
+  $("#prodEntFilter").addEventListener("change",function(){prodPage=1;renderProds();});
+  $("#prodSearch").addEventListener("input",function(){prodPage=1;renderProds();});
+  $("#btnAddProd").addEventListener("click",openProdAdd);
   function applyLibDate(){libFrom=$("#libDateFrom").value||"";libTo=$("#libDateTo").value||"";libPage=1;renderLib();}
   ["#libDateFrom","#libDateTo"].forEach(function(s){$(s).addEventListener("change",applyLibDate);});
   $("#libDateClear").addEventListener("click",function(){$("#libDateFrom").value="";$("#libDateTo").value="";libFrom="";libTo="";libPage=1;renderLib();});
