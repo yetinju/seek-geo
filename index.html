@@ -543,6 +543,7 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
     </div>
     <div class="spacer"></div>
     <div class="sync" id="syncBox"><span class="dot"></span><span id="syncTxt">本地存储</span><button class="syncbtn" id="btnSyncNow" title="立即与云端同步（多端数据）">⟳ 同步</button></div>
+    <span id="appVer" title="点击强制刷新到最新版本" style="font-size:11px;color:#94a3b8;cursor:pointer;user-select:none;margin-right:4px">v20261023b</span>
     <button class="iconbtn" id="btnTheme" title="切换深色模式">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg>
     </button>
@@ -3953,6 +3954,9 @@ async function init(){
   // nav
   $all("#nav button").forEach(function(b){b.addEventListener("click",function(){switchTab(b.getAttribute("data-tab"));});});
   $("#btnSettingsTop").addEventListener("click",function(){switchTab("set");});
+  // 版本号点击 = 强制拉最新（绕开浏览器/微信内置浏览器缓存）
+  var _av=$("#appVer");
+  if(_av)_av.addEventListener("click",function(){ location.replace(location.pathname+"?_v="+Date.now()); });
   $("#btnTheme").addEventListener("click",function(){
     applyTheme(document.documentElement.dataset.theme==="dark"?"light":"dark");
   });
