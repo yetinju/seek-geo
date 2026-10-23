@@ -851,6 +851,16 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
 </div>
 
 <div class="toast" id="toast"></div>
+<!-- 数据自检面板：点顶部版本号打开。用于手机端排查「看不到文章」，只读展示本地/筛选状态。 -->
+<div id="diagMask" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;align-items:center;justify-content:center;padding:16px">
+  <div style="background:#fff;border-radius:14px;max-width:520px;width:100%;max-height:80vh;overflow:auto;padding:18px 18px 14px;font-size:13px;line-height:1.7">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <b style="font-size:15px">数据自检</b>
+      <button id="diagClose" style="border:0;background:#f1f5f9;border-radius:8px;padding:4px 12px;cursor:pointer">关闭</button>
+    </div>
+    <pre id="diagBody" style="margin:0;white-space:pre-wrap;font-family:ui-monospace,Menlo,monospace;font-size:12px;color:#334155"></pre>
+  </div>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
@@ -1616,6 +1626,42 @@ function mergeProdsDedup(localArr,cloudArr){
   });
   return out;
 }
+/* 数据自检：手机端排查「软文库看不到文章」的一站式只读面板。
+   只展示本地状态（文章总数、按产品/分类分布、当前筛选值），不上报、不修改任何数据。
+   关键用途：区分「数据没同步到本机」与「数据已在本机但被筛选条件挡住」两种完全不同的故障。 */
+function showDiag(){
+  var recs=(getRecords()||[]).filter(function(r){return r&&r.type==="article";});
+  var byProd={},byTone={};
+  recs.forEach(function(r){
+    var pn=prodName(r.productId)||("未归属("+(r.productId||"空")+")");
+    byProd[pn]=(byProd[pn]||0)+1;
+    var t=r.tone||"未分类";byTone[t]=(byTone[t]||0)+1;
+  });
+  function fmt(o){var k=Object.keys(o);return k.length?k.map(function(x){return "  · "+x+": "+o[x]+" 篇";}).join("\n"):"  (无)";}
+  var lpSel=$("#libProduct");
+  var lines=[
+    "【版本】"+(document.getElementById("appVer")?document.getElementById("appVer").textContent:"?")+"  构建 "+BUILD_ID,
+    "【云端】"+(_cloudReady?"已连接":"未连接")+( _cloudLastErr?("  ("+_cloudLastErr+")"):""),
+    "",
+    "【本机文章总数】"+recs.length+" 篇",
+    "按产品：",""+fmt(byProd),
+    "按分类：",""+fmt(byTone),
+    "",
+    "【当前软文库筛选】",
+    "  产品 = "+(lpSel&&lpSel.value?((lpSel.options[lpSel.selectedIndex]||{}).textContent||lpSel.value):"(空/不过滤)"),
+    "  libProduct = "+(libProduct||"(空)"),
+    "  分类 = "+(libCat||"(全部)"),
+    "  引擎 = "+($("#libEngine")?($("#libEngine").value||"(全部)"):"-"),
+    "  搜索 = "+($("#libSearch")?($("#libSearch").value||"(空)"):"-"),
+    "  日期 = "+((libFrom||"")+" ~ "+(libTo||"")),
+    "  当前列表显示 = "+document.querySelectorAll("#libList .item").length+" 条",
+    "",
+    "【产品列表】"+(getProds()||[]).map(function(p){return "\n  · "+(p.name||"?")+"  id="+p.id;}).join("")
+  ];
+  $("#diagBody").textContent=lines.join("\n");
+  $("#diagMask").style.display="flex";
+}
+var BUILD_ID="2026-10-23 11:00";
 var _kbMem=lsGet("kbl",[])||[]; // 知识库完整内容驻留内存（云端为唯一真相源）；localStorage 仅持久化轻量元数据，规避微信端 localStorage 配额（约5MB）超限导致清理缓存后无法恢复
 var _cloudLoading=false; // 首次云端同步进行中标志：列表空态据此显示「正在同步」而非「还是空的」
 function stripKbHeavy(d){if(!d)return d;var MAX=1*1024*1024;function trim(s){return (typeof s==="string"&&s.length>MAX)?s.slice(0,MAX):s;}return {id:d.id,name:d.name,type:d.type||"",size:d.size||0,uploadedAt:d.uploadedAt||"",category:d.category||"",kind:d.kind||"",preview:(d.text||"").slice(0,500),html:trim(d.html),text:trim(d.text),data:(typeof d.data==="string"&&d.data.length>MAX)?null:d.data};} // 端侧持久化完整 html/text/data(单文档≤1MB，超出仍只存预览)，避免未联网/同步失败时刷新丢内容；云端仍为主同步源
@@ -3956,7 +4002,9 @@ async function init(){
   $("#btnSettingsTop").addEventListener("click",function(){switchTab("set");});
   // 版本号点击 = 强制拉最新（绕开浏览器/微信内置浏览器缓存）
   var _av=$("#appVer");
-  if(_av)_av.addEventListener("click",function(){ location.replace(location.pathname+"?_v="+Date.now()); });
+  if(_av)_av.addEventListener("click",function(){ showDiag(); });
+  var _dc=$("#diagClose");
+  if(_dc)_dc.addEventListener("click",function(){ $("#diagMask").style.display="none"; });
   $("#btnTheme").addEventListener("click",function(){
     applyTheme(document.documentElement.dataset.theme==="dark"?"light":"dark");
   });
