@@ -881,7 +881,7 @@ function localISO(d){
   var p=function(n){return (n<10?"0":"")+n;};
   return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())+" "+p(d.getHours())+":"+p(d.getMinutes())+":"+p(d.getSeconds());
 }
-var libPage=1,entPage=1,kbPage=1,trainPage=1,specPage=1,kbCat="公司信息",libCat="实测/评测报告",PAGE_SIZE=10,trainSel={},trainCat="实测/评测报告",specCat="",libFrom="",libTo="";
+var libPage=1,entPage=1,kbPage=1,trainPage=1,specPage=1,kbCat="公司信息",libCat="",PAGE_SIZE=10,trainSel={},trainCat="实测/评测报告",specCat="",libFrom="",libTo="";
 var libProduct="",prodPage=1; // 软文库按产品筛选（空=全部产品）；产品管理分页
 var qcPage=1,qcLogPage=1,qcSelId=null,qcCat="",qcSearch="",qcLogs=lsGet("qc_logs",[]),lastQc=null;
 function setQcLogs(a){qcLogs=a||[];lsSet("qc_logs",qcLogs);}
@@ -2248,6 +2248,22 @@ function fillProdSelect(){
   else sel.value=ps[0].id;
 }
 /* 统一填充所有产品下拉：生成器 + 软文库筛选 */
+/* 软文库产品下拉的默认产品：固定「功率分析仪」。
+   找不到（被改名/删除）时回退到文章数最多的产品，再回退第一个产品。
+   之所以不能简单取选项第一项：选项按名称排序，「MCC数据采集卡」会排在「功率分析仪」前，
+   导致打开软文库只看到 MCC 的少量文章，误以为功率分析仪的文章丢了。 */
+function defaultLibProductId(){
+  var ps=getProds();
+  if(!ps.length)return "";
+  var hit=ps.filter(function(p){return normProdName(p.name)==="功率分析仪";})[0];
+  if(hit)return hit.id;
+  var cnt={},best=0,pick="";
+  getRecords().forEach(function(r){
+    if(r&&r.type==="article"&&r.productId){cnt[r.productId]=(cnt[r.productId]||0)+1;}
+  });
+  ps.forEach(function(p){if((cnt[p.id]||0)>best){best=cnt[p.id];pick=p.id;}});
+  return pick||ps[0].id;
+}
 function fillProdSelects(){
   fillProdSelect();
   var lp=$("#libProduct");
@@ -2255,8 +2271,14 @@ function fillProdSelects(){
     var cur=lp.value||libProduct;
     lp.innerHTML=prodOptionsHTML("",false); // 不提供「全部产品」选项：必须选定一个具体产品
     var has=Array.prototype.some.call(lp.options,function(o){return o.value===cur;});
-    // 无「全部产品」项，回退时选第一个产品（无产品时保持空=不过滤）
-    lp.value=(cur&&has)?cur:(lp.options.length?lp.options[0].value:"");
+    if(cur&&has){lp.value=cur;}
+    else{
+      // 无「全部」项后，默认落在谁身上很关键：按字母序取第一项会出现
+      // 「明明有 14 篇功率分析仪文章，却只显示 1 篇 MCC」的错觉。
+      // 产品要求：默认固定「功率分析仪」；用户手动切换后保持，不再被改回。
+      var def=defaultLibProductId();
+      lp.value=def||(lp.options.length?lp.options[0].value:"");
+    }
     libProduct=lp.value;
   }
 }
@@ -2787,6 +2809,13 @@ function saveArticleFromGen(){
   // 统一走 resetLibFilters() 收口，保证存入后立即可见。
   libCat=r.tone||libCat;
   resetLibFilters();
+  // 刚存入的文章必须可见：产品下拉钉到它所属的产品（若该文章有产品归属）
+  if(r.productId){
+    var lp=$("#libProduct");
+    if(lp&&Array.prototype.some.call(lp.options,function(o){return o.value===r.productId;})){
+      lp.value=r.productId;libProduct=r.productId;
+    }
+  }
   refreshAll();
   toast("已存入软文库");switchTab("lib");
 }
@@ -2797,10 +2826,9 @@ function resetLibFilters(){
   var df=$("#libDateFrom"),dt=$("#libDateTo");if(df)df.value="";if(dt)dt.value="";
   var se=$("#libSearch");if(se)se.value="";
   var ee=$("#libEngine");if(ee)ee.value="";
-  // 无「全部产品」选项：重置时选定第一个产品（无产品时为空=不过滤）
-  fillProdSelects();
+  // 无「全部产品」选项：重置时回到默认产品（固定「功率分析仪」）
   var lp=$("#libProduct");
-  if(lp&&lp.options.length)lp.value=lp.options[0].value;
+  if(lp&&lp.options.length)lp.value=defaultLibProductId()||lp.options[0].value;
   libProduct=(lp&&lp.value)?lp.value:"";
   libPage=1;
 }
@@ -4038,7 +4066,8 @@ async function init(){
       specPage=1;renderSpecs();
     });
   });
-  // 软文库 / 企业知识库 / 文章训练：默认激活首个真实分类（已删除「全部」入口，默认直接展示首分类而非全部）
+  // 软文库 / 企业知识库 / 文章训练：按当前分类变量给对应 chip 打高亮。
+  // 软文库的 libCat 为空字符串，正好命中新加的「全部」chip（软文库默认展示该产品的全部分类文章）。
   [["#libFilters",libCat,"libCat"],["#kbFilters",kbCat,"kbCat"],["#trainFilters",trainCat,"trainCat"]].forEach(function(p){
     var box=$(p[0]);
     if(!box)return;
