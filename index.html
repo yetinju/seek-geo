@@ -1240,7 +1240,7 @@ function signalLocalChange(){try{localStorage.setItem(K+"_rt_"+Date.now(),"1");l
 /* 按 id 稳定排序，使多端生成的 payload 字节一致，是"无变化则跳过回写"防乒乓写的前提 */
 function sortById(a){return (Array.isArray(a)?a:[]).slice().sort(function(x,y){return (x&&x.id||"").localeCompare(y&&y.id||"");});}
 /* ---- 多表同步核心：每个模块一张表，行=条目，配置/墓碑为单例行 ---- */
-function cfgPayload(){return {cfg:getCfg(),spec_active:getActiveSpecId(),seeded:lsGet("seeded",false),migrated:true,qc_logs:qcLogs||[],kws:getKws()};}
+function cfgPayload(){return {cfg:getCfg(),spec_active:getActiveSpecId(),seeded:lsGet("seeded",false),migrated:true,qc_logs:qcLogs||[],kws:getKws(),prods:getProds()};}
 async function upsertRow(table,id,payload){return _db.from(table).upsert({id:id,payload:payload,updated_at:new Date().toISOString()});}
 async function deleteRow(table,id){return _db.from(table).delete().eq("id",id);}
 async function pushCollRows(table,rows){for(var i=0;i<rows.length;i++){if(rows[i]&&rows[i].id)await upsertRow(table,rows[i].id,rows[i].payload);}}
@@ -1311,7 +1311,7 @@ async function syncToCloud(opts){
     var changed=false;
     changed=(await syncColl(TBL.records,getRecords,setRecords))||changed; // 软文库
     changed=(await syncColl(TBL.ents,getEnts,setEnts))||changed;           // 企业画像
-    changed=(await syncColl(TBL.prods,getProds,setProds))||changed;       // 产品（geo_products 表未建时静默跳过）
+    changed=(await syncColl(TBL.prods,getProds,setProds))||changed;       // 产品（geo_products 表未建时静默跳过，改由 geo_cfg.payload.prods 兜底同步）
     changed=(await syncColl(TBL.specs,getSpecs,setSpecs))||changed;       // 风格规范
     changed=(await syncKbToCloud())||changed;                             // 知识库（每篇独立行，含完整正文）
     changed=(await syncTrainToCloud())||changed;                         // 文章训练范文（每篇独立行，含完整正文）
@@ -1349,6 +1349,11 @@ async function loadFromCloud(){
       if(cp.seeded)lsSet("seeded",true);
       if(cp.qc_logs)setQcLogs(cp.qc_logs); // 质检查询跨端同步（复用 geo_cfg 信号）
       if(cp.kws)setKws(cp.kws);            // 核心关键词跨端同步（复用 geo_cfg 信号）
+    // 产品跨端同步：geo_products 表可能未建，产品随 geo_cfg.payload.prods 一起走，保证新设备首开即可见
+    if(Array.isArray(cp.prods)){
+      var _final=mergeProdsDedup(getProds(),cp.prods);
+      if(JSON.stringify(_final)!==JSON.stringify(getProds())){setProds(_final);fillProdSelects();renderProds();}
+    }
       _lastCfgTs=c.data.updated_at;
     }
     // ⚠️ 旧表迁移 syncLegacyStore 已禁用自动调用：其字段级查询旧表 geo_store 时偶发经代理 body 挂死，
@@ -1503,6 +1508,11 @@ async function pullLoop(){
         if(c2.data.payload.spec_active!==undefined)setActiveSpecId(c2.data.payload.spec_active);
         if(c2.data.payload.seeded)lsSet("seeded",true);
         if(c2.data.payload.kws!==undefined){setKws(c2.data.payload.kws||[]);renderKwMulti();} // 核心关键词跨端同步
+        // 产品跨端同步：geo_products 表未建时不报错，统一走 geo_cfg.payload.prods（与 kws 同一通道）
+        if(Array.isArray(c2.data.payload.prods)){
+          var _mergedProds=mergeProdsDedup(getProds(),c2.data.payload.prods);
+          if(JSON.stringify(_mergedProds)!==JSON.stringify(getProds())){setProds(_mergedProds);fillProdSelects();renderProds();}
+        }
       }
       await applyColl(TBL.records,getRecords,setRecords);
       await applyColl(TBL.ents,getEnts,setEnts);
@@ -1587,6 +1597,23 @@ function prodOptionsHTML(selId,withAll,allText,entId){
   return h+ps.map(function(p){
     return '<option value="'+esc(p.id)+'"'+(p.id===selId?" selected":"")+'>'+esc(p.name||"未命名产品")+'</option>';
   }).join("");
+}
+/* 产品合并（云端为权威 + 墓碑感知 + 按「企业+名称」去重）。
+   去重原因：新设备可能在云端数据到达前，被一次性迁移逻辑自建了同名产品（id 不同），
+   两端并集后下拉里就会出现两个「功率分析仪」。这里保留云端版本，丢弃本端同名冗余。 */
+function mergeProdsDedup(localArr,cloudArr){
+  var tomb=getTomb(),byKey={},out=[];
+  (Array.isArray(cloudArr)?cloudArr:[]).forEach(function(x){
+    if(!x||tomb[x.id])return;
+    var k=(x.entId||"")+"|"+normProdName(x.name);
+    if(byKey[k])return;byKey[k]=1;out.push(x);
+  });
+  (Array.isArray(localArr)?localArr:[]).forEach(function(x){
+    if(!x||tomb[x.id])return;
+    var k=(x.entId||"")+"|"+normProdName(x.name);
+    if(byKey[k])return;byKey[k]=1;out.push(x);
+  });
+  return out;
 }
 var _kbMem=lsGet("kbl",[])||[]; // 知识库完整内容驻留内存（云端为唯一真相源）；localStorage 仅持久化轻量元数据，规避微信端 localStorage 配额（约5MB）超限导致清理缓存后无法恢复
 var _cloudLoading=false; // 首次云端同步进行中标志：列表空态据此显示「正在同步」而非「还是空的」
@@ -2148,7 +2175,9 @@ function openProdAdd(){
     if(prodExists(f.name,f.entId,null)){toast("该企业下已有同名产品");return;}
     var ps=getProds();
     ps.push({id:uid(),name:f.name,entId:f.entId,createdAt:TODAY,updatedAt:nowStr()});
-    prodPage=1;setProds(ps);closeSheet();fillProdSelects();renderProds();toast("已保存产品");
+    prodPage=1;setProds(ps);closeSheet();fillProdSelects();renderProds();
+    if(_cloudReady)syncToCloud({silent:true}); // 立即推送（产品随 geo_cfg.payload.prods 同步，不等定时器）
+    toast("已保存产品");
   });
 }
 function openProdEdit(id){
@@ -2168,7 +2197,9 @@ function openProdEdit(id){
     var ps=getProds();
     var rec=ps.filter(function(x){return x.id===id;})[0];if(!rec)return;
     rec.name=f.name;rec.entId=f.entId;rec.updatedAt=nowStr();
-    setProds(ps);closeSheet();fillProdSelects();renderProds();toast("已保存");
+    setProds(ps);closeSheet();fillProdSelects();renderProds();
+    if(_cloudReady)syncToCloud({silent:true}); // 立即推送，改名跨端生效
+    toast("已保存");
   });
 }
 function delProd(id){
@@ -2244,6 +2275,14 @@ function migrateProductsOnce(){
   try{
     if(lsGet("prod_mig1",null))return;
     var prods=getProds(),recs=getRecords(),ents=getEnts();
+    // ⚠️ 新设备保护：本地既无产品也无「未归属产品」的历史软文时，什么都不该造。
+    // 否则手机会在云端产品拉回之前自己造一个同名的「功率分析仪」（不同 id），
+    // 与云端产品并存 → 下拉里出现两个同名条目。此处直接落标记，等云端数据到达即可。
+    var orphan=recs.some(function(r){return r&&r.type==="article"&&!r.productId;});
+    if(!prods.length&&!orphan){
+      lsSet("prod_mig1",{at:nowStr(),pid:"",n:0,skip:"no-local-data"});
+      return;
+    }
     // 1) 确保「功率分析仪」产品存在，优先挂到仪器仪表/名称含凌茂的企业
     var p=prods.filter(function(x){return normProdName(x.name)==="功率分析仪";})[0];
     if(!p){
