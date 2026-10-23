@@ -1609,6 +1609,43 @@ function prodOptionsHTML(selId,withAll,allText,entId){
     return '<option value="'+esc(p.id)+'"'+(p.id===selId?" selected":"")+'>'+esc(p.name||"未命名产品")+'</option>';
   }).join("");
 }
+/* 修复软文的产品归属：把 productId 指向「已不存在产品」的文章重新挂到正确产品上。
+   而文章按 id 关联，于是旧设备上的文章会指向一个云端/当前都不存在的幽灵 id，
+   表现为「软文库选了功率分析仪却一篇都没有」——文章都在，只是归属断了。
+   策略：
+     ① 该 id 存在于当前产品列表 → 不动；
+     ② 否则按文章标题关键词猜测（标题含产品名则归属该产品），
+     ③ 仍猜不到则归到默认产品（功率分析仪），保证文章不会消失。
+   仅在本机执行，结果随下次同步回写云端，云端记录本身不被破坏。 */
+var _repairing=false;
+function repairOrphanProductIds(){
+  try{
+    if(_repairing)return 0; // 防重入：本函数会写 records → 触发 refreshAll，避免自激循环
+    var prods=getProds()||[],recs=getRecords()||[];
+    if(!prods.length||!recs.length)return 0;
+    var ids={};prods.forEach(function(p){if(p&&p.id)ids[p.id]=1;});
+    var def=defaultLibProductId();
+    var fixed=0;
+    var out=recs.map(function(r){
+      if(!r||r.type!=="article")return r;
+      if(r.productId&&ids[r.productId])return r;
+      // 未归属或指向幽灵产品：按标题/关键词匹配产品名
+      var text=String((r.title||"")+" "+(r.keywords||""));
+      var pick="";
+      prods.forEach(function(p){
+        var n=String(p.name||"").trim();
+        if(n&&text.indexOf(n)>=0){ if(!pick||n.length>String(prodName(pick)||"").length) pick=p.id; }
+      });
+      if(!pick)pick=def;
+      if(!pick)return r;
+      var o={};for(var k in r)o[k]=r[k];o.productId=pick;
+      fixed++;
+      return o;
+    });
+    if(fixed){_repairing=true;setRecords(out);_repairing=false;console.log("repairOrphanProductIds: 已修复 "+fixed+" 篇文章的产品归属");}
+    return fixed;
+  }catch(e){_repairing=false;console.warn("repairOrphanProductIds failed",e);return 0;}
+}
 /* 产品合并（云端为权威 + 墓碑感知 + 按「企业+名称」去重）。
    去重原因：新设备可能在云端数据到达前，被一次性迁移逻辑自建了同名产品（id 不同），
    两端并集后下拉里就会出现两个「功率分析仪」。这里保留云端版本，丢弃本端同名冗余。 */
@@ -3949,7 +3986,8 @@ function switchTab(tab){
 
 /* ============ 刷新 ============ */
 function refreshAll(){
-  migrateProductsOnce(); // 云端企业/产品数据到达后重试迁移（有标记时立即返回，开销可忽略）
+  migrateProductsOnce();     // 云端企业/产品数据到达后重试迁移（有标记时立即返回，开销可忽略）
+  repairOrphanProductIds();  // 修复指向已不存在产品的软文归属（否则按产品筛选会漏文）
   renderLib();renderEnt();renderProds();renderKb();renderTrain();renderSpecs();renderQcLog();fillEntSelect();fillProdSelects();renderKws();renderKwMulti();
 }
 
