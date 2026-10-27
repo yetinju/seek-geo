@@ -3994,10 +3994,31 @@ function switchTab(tab){
 }
 
 /* ============ 刷新 ============ */
+/* 一次性回填：历史训练范文没有 productId（上传时产品功能还不存在），
+   用户确认「之前的文章都属于功率分析仪」，故全部归属到默认产品。
+   幂等：落标记 train_pb1；本地还没有范文时不落标记，等云端数据拉回后重试。 */
+function backfillTrainProduct(){
+  try{
+    if(lsGet("train_pb1",null))return;
+    var ts=getTrain()||[];
+    if(!ts.length)return;               // 云端范文尚未到达，等下次 refreshAll 重试
+    var def=defaultLibProductId();
+    if(!def)return;                     // 产品还没同步到，同样等重试
+    var n=0;
+    var out=ts.map(function(t){
+      if(t&&!t.productId){var o={};for(var k in t)o[k]=t[k];o.productId=def;n++;return o;}
+      return t;
+    });
+    if(n)setTrain(out);
+    lsSet("train_pb1",{at:nowStr(),n:n,pid:def});
+    if(n)console.log("backfillTrainProduct: 已把 "+n+" 篇历史范文归属到「"+(prodName(def)||"默认产品")+"」");
+  }catch(e){console.warn("backfillTrainProduct failed",e);}
+}
 function refreshAll(){
   migrateProductsOnce();     // 云端企业/产品数据到达后重试迁移（有标记时立即返回，开销可忽略）
   repairOrphanProductIds();  // 修复指向已不存在产品的软文归属（否则按产品筛选会漏文）
   fillTrainProdSelects();    // 文章训练的产品下拉（上传标注 + 列表筛选）
+  backfillTrainProduct();    // 历史范文一次性归属默认产品（幂等，云端数据到达后执行）
   renderLib();renderEnt();renderProds();renderKb();renderTrain();renderSpecs();renderQcLog();fillEntSelect();fillProdSelects();renderKws();renderKwMulti();
 }
 
