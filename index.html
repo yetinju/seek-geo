@@ -714,6 +714,7 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
           <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>训练软文风格</h3>
           <p class="sub">上传 (.txt / .md / .docx) 软文范文并归入对应分类；在下方「按分类训练」中，可针对<i>每个分类</i>下的范文单独训练，提炼该分类专属的「写作风格规范」。之后在「生成器」生成时，系统会自动套用与所选「行文风格」相匹配的分类规范。训练范文以 IndexedDB 本地持久化，并经 Cloudflare 反代同步至 Supabase 云端，多设备共享。</p>
           <div class="field"><label>范文分类 <span class="hint">上传后归入对应分类</span></label><select id="trainCatSel"></select></div>
+          <div class="field"><label>所属产品 <span class="hint">给范文标注产品归属，便于按产品筛选与训练</span></label><select id="trainProdSel"></select></div>
           <div class="field"><label>上传软文范文 <span class="hint">可多选 · .txt / .md / .docx · 单文件 ≤ 2MB</span></label><input type="file" id="trainFile" multiple accept=".txt,.md,.markdown,.text,.csv,.docx"></div>
           <div class="note">上传后，到下方「按分类训练」选择对应分类、点「训练此分类」即可；训练范文以 IndexedDB 本地持久化，并经 Cloudflare 反代同步至 Supabase 云端（多设备共享）。</div>
         </div>
@@ -726,6 +727,7 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
           <button class="btn ghost sm" id="trainSelCancel">取消选择</button>
           <button class="btn danger sm" id="trainSelDel">🗑 删除选中</button>
         </div>
+        <div class="filters" style="margin:0 0 12px"><select id="trainProdFilter" title="按产品筛选范文"><option value="">全部产品</option></select></div>
         <div class="kb-filters" id="trainFilters">
           <button class="chip-f" data-cat="实测/评测报告">实测/评测报告</button>
           <button class="chip-f" data-cat="避坑/风险警示">避坑/风险警示</button>
@@ -893,6 +895,7 @@ function localISO(d){
   return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())+" "+p(d.getHours())+":"+p(d.getMinutes())+":"+p(d.getSeconds());
 }
 var libPage=1,entPage=1,kbPage=1,trainPage=1,specPage=1,kbCat="公司信息",libCat="",PAGE_SIZE=10,trainSel={},trainCat="实测/评测报告",specCat="",libFrom="",libTo="";
+var trainProd=""; // 文章训练的产品筛选（空=全部产品；训练范文带 productId 字段，上传时标注）
 var libProduct="",prodPage=1; // 软文库按产品筛选（空=全部产品）；产品管理分页
 var qcPage=1,qcLogPage=1,qcSelId=null,qcCat="",qcSearch="",qcLogs=lsGet("qc_logs",[]),lastQc=null;
 function setQcLogs(a){qcLogs=a||[];lsSet("qc_logs",qcLogs);}
@@ -3513,6 +3516,8 @@ function renderTrain(){
     return (b.uploadedAt||"").localeCompare(a.uploadedAt||""); // 旧数据无 ts 时按日期兜底
   });
   var list=all.filter(function(x){return !trainCat || (x.category||"未分类")===trainCat;});
+  // 按产品筛选（trainProd 空 = 全部；历史范文无 productId，选「全部」才能看到）
+  if(trainProd)list=list.filter(function(x){return (x.productId||"")===trainProd;});
   var box=$("#trainList");
   if(!list.length){box.innerHTML='<div class="empty-state">'+(trainCat?('「'+trainCat+'」分类下还没有训练范文，去上方上传时选择该分类即可。'):(_cloudLoading?'⏳ 正在从云端同步训练范文…<br><span class="sub">首次同步视网络情况约需 10~30 秒，请勿关闭页面</span>':'还没有训练范文。点击上方「选择文件」可一次上传多篇 (.txt / .md / .docx)，自动加入下方列表。'))+'</div>';return;}
   var total=list.length;
@@ -3522,7 +3527,7 @@ function renderTrain(){
     var checked=trainSel[r.id]?"checked":"";
     return '<div class="item hasbtns'+(trainSel[r.id]?" sel":"")+'" data-id="'+r.id+'">'+
       '<div class="top top-btns"><label class="selwrap"><input type="checkbox" class="sel" '+checked+'></label><div class="ti">'+esc(r.title||"未命名范文")+'</div><div class="acts"><button class="btn ghost sm act-view">查看</button><button class="btn ghost sm act-dl">下载</button><button class="btn danger sm act-del">删除</button></div></div>'+
-      '<div class="meta"><span>📝 '+(r.words||0)+' 字</span><span>🕓 '+(r.uploadedAt||"")+'</span><span>📄 范文</span></div>'+
+      '<div class="meta"><span>📝 '+(r.words||0)+' 字</span><span>🕓 '+(r.uploadedAt||"")+'</span><span>📄 范文</span>'+(r.productId?'<span>📦 '+esc(prodName(r.productId)||"未归属产品")+'</span>':'')+'</div>'+
     '</div>';
   }).join("")+pagerHTML(total,trainPage,PAGE_SIZE);
   $all(".item",box).forEach(function(el){
@@ -3537,10 +3542,10 @@ function renderTrain(){
   updateTrainSelBar();
   renderTrainCats();
 }
-function addTrainRecord(title,content,cat){
+function addTrainRecord(title,content,cat,pid){
   if(!content||!content.trim()){toast("内容为空，无法训练");return false;}
   var trains=getTrain();
-  trains.push({id:uid(),title:title||("未命名范文 "+TODAY),content:content,words:content.length,uploadedAt:TODAY,ts:Date.now(),category:cat||""});
+  trains.push({id:uid(),title:title||("未命名范文 "+TODAY),content:content,words:content.length,uploadedAt:TODAY,ts:Date.now(),category:cat||"",productId:pid||""});
   trainPage=1;setTrain(trains);renderTrain();
   return trains.length;
 }
@@ -3606,6 +3611,8 @@ function catSpec(cat){
 function renderTrainCats(){
   var box=$("#trainCatGrid");if(!box)return;
   var trains=getTrain();
+  // 产品筛选同样作用于「按分类训练」的计数与训练范围，保证与列表看到的一致
+  if(trainProd)trains=trains.filter(function(t){return (t.productId||"")===trainProd;});
   box.innerHTML=LIB_CATS.map(function(c){
     var n=trains.filter(function(t){return (t.category||"未分类")===c;}).length;
     var sp=catSpec(c);
@@ -3812,8 +3819,10 @@ function getActiveSpec(tone){
 }
 async function trainStyleSpec(cat){
   var trains=getTrain();
+  // 与「按分类训练」卡片一致：产品筛选生效时只用该产品的范文训练
+  if(trainProd)trains=trains.filter(function(t){return (t.productId||"")===trainProd;});
   var pool=cat?trains.filter(function(t){return (t.category||"未分类")===cat;}):trains.slice();
-  if(!pool.length){toast(cat?("「"+cat+"」分类下还没有训练范文"):"请先上传至少一篇训练范文");return;}
+  if(!pool.length){toast(cat?(trainProd?("「"+cat+"」分类下（当前产品）还没有训练范文"):"「"+cat+"」分类下还没有训练范文"):"请先上传至少一篇训练范文");return;}
   var cfg=getCfg();
   if(!cfg.apiKey){toast("请先在「设置」中填写 API Key");return;}
   var btn=cat?$('.ct-train[data-cat="'+cat+'"]'):$("#btnTrainGen");
@@ -3988,10 +3997,28 @@ function switchTab(tab){
 function refreshAll(){
   migrateProductsOnce();     // 云端企业/产品数据到达后重试迁移（有标记时立即返回，开销可忽略）
   repairOrphanProductIds();  // 修复指向已不存在产品的软文归属（否则按产品筛选会漏文）
+  fillTrainProdSelects();    // 文章训练的产品下拉（上传标注 + 列表筛选）
   renderLib();renderEnt();renderProds();renderKb();renderTrain();renderSpecs();renderQcLog();fillEntSelect();fillProdSelects();renderKws();renderKwMulti();
 }
 
 /* ============ 引擎下拉填充 ============ */
+/* 填充文章训练的两个产品下拉：上传时标注归属（默认「功率分析仪」）+ 列表按产品筛选（默认全部） */
+function fillTrainProdSelects(){
+  var up=$("#trainProdSel"),fl=$("#trainProdFilter");
+  var ps=getProds();
+  if(up){
+    var cur=up.value||defaultLibProductId();
+    up.innerHTML=ps.map(function(p){return '<option value="'+esc(p.id)+'"'+(p.id===cur?" selected":"")+'>'+esc(p.name||"未命名产品")+'</option>';}).join("");
+    var has=Array.prototype.some.call(up.options,function(o){return o.value===cur;});
+    up.value=has?cur:(up.options.length?up.options[0].value:"");
+  }
+  if(fl){
+    var cf=fl.value;
+    fl.innerHTML='<option value="">全部产品</option>'+ps.map(function(p){return '<option value="'+esc(p.id)+'"'+(p.id===cf?" selected":"")+'>'+esc(p.name||"未命名产品")+'</option>';}).join("");
+    if(cf&&fl.querySelector('option[value="'+cf+'"]'))fl.value=cf;
+    trainProd=fl.value;
+  }
+}
 function fillEngineSelect(){
   var sel=$("#libEngine");
   sel.innerHTML='<option value="">全部引擎</option>'+ENGINES.map(function(e){return '<option>'+e+'</option>';}).join("");
@@ -4141,6 +4168,8 @@ async function init(){
   });
   // 文章训练分类下拉 & 筛选
   $("#trainCatSel").innerHTML=LIB_CATS.map(function(c){return '<option>'+c+'</option>';}).join("");
+  fillTrainProdSelects();
+  $("#trainProdFilter").addEventListener("change",function(){trainProd=this.value;trainPage=1;renderTrain();});
   $all("#trainFilters .chip-f").forEach(function(b){
     b.addEventListener("click",function(){
       trainCat=b.getAttribute("data-cat")||"";
@@ -4173,7 +4202,7 @@ async function init(){
     var arr=Array.prototype.slice.call(files), total=arr.length, done=0, ok=0, skip=0;
     arr.forEach(function(f){
       fileToText(f).then(function(t){
-        var n=addTrainRecord(f.name.replace(/\.[^.]+$/,""),t,$("#trainCatSel").value);
+        var n=addTrainRecord(f.name.replace(/\.[^.]+$/,""),t,$("#trainCatSel").value,$("#trainProdSel")?$("#trainProdSel").value:"");
         if(n)ok++; else skip++;
       }).catch(function(){skip++;}).then(function(){
         done++;
