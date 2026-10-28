@@ -543,7 +543,7 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
     </div>
     <div class="spacer"></div>
     <div class="sync" id="syncBox"><span class="dot"></span><span id="syncTxt">本地存储</span><button class="syncbtn" id="btnSyncNow" title="立即与云端同步（多端数据）">⟳ 同步</button></div>
-    <span id="appVer" title="点击强制刷新到最新版本" style="font-size:11px;color:#94a3b8;cursor:pointer;user-select:none;margin-right:4px">v20261023b</span>
+    <span id="appVer" title="点击强制刷新到最新版本" style="font-size:11px;color:#94a3b8;cursor:pointer;user-select:none;margin-right:4px">v20261028a</span>
     <button class="iconbtn" id="btnTheme" title="切换深色模式">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg>
     </button>
@@ -1595,6 +1595,7 @@ function getProds(){return lsGet("prod",[]);}
 function setProds(a){lsSet("prod",Array.isArray(a)?a:[]);}
 function prodById(id){if(!id)return null;var l=getProds();for(var i=0;i<l.length;i++){if(l[i]&&l[i].id===id)return l[i];}return null;}
 function prodName(id){var p=prodById(id);return p?(p.name||""):"";}
+function prodSellById(id){var p=prodById(id);return p?(p.sell||""):"";}
 function normProdName(s){return String(s||"").replace(/\s+/g," ").trim().toLowerCase();}
 /* 同企业下不允许重名（不同企业可各有一个「功率分析仪」）；exceptId 用于编辑时排除自身 */
 function prodExists(name,entId,exceptId){
@@ -1701,7 +1702,7 @@ function showDiag(){
   $("#diagBody").textContent=lines.join("\n");
   $("#diagMask").style.display="flex";
 }
-var BUILD_ID="2026-10-23 11:00";
+var BUILD_ID="2026-10-28 13:36";
 var _kbMem=lsGet("kbl",[])||[]; // 知识库完整内容驻留内存（云端为唯一真相源）；localStorage 仅持久化轻量元数据，规避微信端 localStorage 配额（约5MB）超限导致清理缓存后无法恢复
 var _cloudLoading=false; // 首次云端同步进行中标志：列表空态据此显示「正在同步」而非「还是空的」
 function stripKbHeavy(d){if(!d)return d;var MAX=1*1024*1024;function trim(s){return (typeof s==="string"&&s.length>MAX)?s.slice(0,MAX):s;}return {id:d.id,name:d.name,type:d.type||"",size:d.size||0,uploadedAt:d.uploadedAt||"",category:d.category||"",kind:d.kind||"",preview:(d.text||"").slice(0,500),html:trim(d.html),text:trim(d.text),data:(typeof d.data==="string"&&d.data.length>MAX)?null:d.data};} // 端侧持久化完整 html/text/data(单文档≤1MB，超出仍只存预览)，避免未联网/同步失败时刷新丢内容；云端仍为主同步源
@@ -2209,6 +2210,7 @@ function renderProds(){
         (ent?'<span class="chip">'+esc(ent.name)+'</span>':'<span class="chip">未归属企业</span>')+'</div>'+
       '<div class="meta"><span class="meta-main">'+
         '<span>'+IC_PROD+' 关联软文 '+cnt+' 篇</span>'+
+        (p.sell?'<span>✨ '+esc(String(p.sell).slice(0,40))+(String(p.sell).length>40?'…':'')+'</span>':'')+
         '<span>🕓 '+(p.updatedAt?('更新于 '+esc(fmtTime(p.updatedAt,p.createdAt))):('创建于 '+esc(fmtTime(p.createdAt))))+'</span>'+
       '</span></div>'+
       '<div class="acts">'+
@@ -2240,7 +2242,8 @@ function renderProds(){
 function prodFields(){
   return {
     name:$("#p2_name").value.trim(),
-    entId:$("#p2_ent")?$("#p2_ent").value:""
+    entId:$("#p2_ent")?$("#p2_ent").value:"",
+    sell:$("#p2_sell")?$("#p2_sell").value.trim():""
   };
 }
 function prodEntOptions(sel){
@@ -2253,6 +2256,7 @@ function openProdAdd(){
   sheet.innerHTML='<h3>新增产品 <button class="x" data-x>×</button></h3>'+
     '<div class="field"><label>所属企业 <span class="hint">决定生成器里按企业收窄的归属</span></label><select id="p2_ent">'+prodEntOptions($("#g_ent")?$("#g_ent").value:"")+'</select></div>'+
     '<div class="field"><label>产品名称 <span class="hint">必填，同一企业下不可重名</span></label><input id="p2_name" placeholder="如：功率分析仪"></div>'+
+    '<div class="field"><label>产品卖点 <span class="hint">生成器选择该产品时自动带入「品牌/产品卖点」</span></label><textarea id="p2_sell" rows="4" placeholder="如：自研降噪芯片、40h 续航、支持多通道同步采集"></textarea></div>'+
     '<button class="btn" id="p2_save">＋ 保存产品</button>';
   $("#mask").classList.add("show");
   $("[data-x]",sheet).addEventListener("click",closeSheet);
@@ -2261,7 +2265,7 @@ function openProdAdd(){
     if(!f.name){toast("请填写产品名称");return;}
     if(prodExists(f.name,f.entId,null)){toast("该企业下已有同名产品");return;}
     var ps=getProds();
-    ps.push({id:uid(),name:f.name,entId:f.entId,createdAt:TODAY,updatedAt:nowStr()});
+    ps.push({id:uid(),name:f.name,entId:f.entId,sell:f.sell,createdAt:TODAY,updatedAt:nowStr()});
     prodPage=1;setProds(ps);closeSheet();fillProdSelects();renderProds();
     if(_cloudReady)syncToCloud({silent:true}); // 立即推送（产品随 geo_cfg.payload.prods 同步，不等定时器）
     toast("已保存产品");
@@ -2273,6 +2277,7 @@ function openProdEdit(id){
   sheet.innerHTML='<h3>编辑产品 <button class="x" data-x>×</button></h3>'+
     '<div class="field"><label>所属企业</label><select id="p2_ent">'+prodEntOptions(p.entId||"")+'</select></div>'+
     '<div class="field"><label>产品名称 <span class="hint">必填，同一企业下不可重名</span></label><input id="p2_name" value="'+esc(p.name||"")+'"></div>'+
+    '<div class="field"><label>产品卖点 <span class="hint">生成器选择该产品时自动带入「品牌/产品卖点」</span></label><textarea id="p2_sell" rows="4">'+esc(p.sell||"")+'</textarea></div>'+
     '<div class="hint" style="margin-bottom:12px">改名后，已归属该产品的 '+prodArticleCount(id)+' 篇软文会自动跟随新名称（文章按 ID 关联，不会失联）。</div>'+
     '<button class="btn" id="p2_save">保存修改</button>';
   $("#mask").classList.add("show");
@@ -2283,7 +2288,7 @@ function openProdEdit(id){
     if(prodExists(f.name,f.entId,id)){toast("该企业下已有同名产品");return;}
     var ps=getProds();
     var rec=ps.filter(function(x){return x.id===id;})[0];if(!rec)return;
-    rec.name=f.name;rec.entId=f.entId;rec.updatedAt=nowStr();
+    rec.name=f.name;rec.entId=f.entId;rec.sell=f.sell;rec.updatedAt=nowStr();
     setProds(ps);closeSheet();fillProdSelects();renderProds();
     if(_cloudReady)syncToCloud({silent:true}); // 立即推送，改名跨端生效
     toast("已保存");
@@ -2333,6 +2338,12 @@ function fillProdSelect(){
   // 保留原选择；原选择已不存在（如切换了企业）时回退第一项
   if(cur&&cur!=="__custom__"&&ps.some(function(p){return p.id===cur;}))sel.value=cur;
   else sel.value=ps[0].id;
+  // 首次/数据到达后自动选中时，联动一次产品卖点（不改变用户当前正在编辑的自定义内容）
+  var _pp=prodById(sel.value),_gs=$("#g_sell");
+  if(_pp&&_pp.sell&&_gs&&_gs.getAttribute("data-from-prod")!==_pp.id){
+    // 卖点框还是空的或之前从未联动过该产品时带入；用户手动改过则不打扰
+    if(!_gs.value.trim()||!_gs.getAttribute("data-from-prod")){_gs.value=_pp.sell;_gs.setAttribute("data-from-prod",_pp.id);}
+  }
 }
 /* 统一填充所有产品下拉：生成器 + 软文库筛选 */
 /* 软文库产品下拉的默认产品：固定「功率分析仪」。
@@ -4144,6 +4155,10 @@ async function init(){
     else{
       if(cu)cu.style.display="none";
       var p=prodById(v);
+      // 联动「品牌/产品卖点」：产品自带卖点时自动带入（文本框仍可手改）。
+      // 产品没填卖点则保持现状不动，避免清空用户已输入的内容。
+      var gs=$("#g_sell");
+      if(p&&p.sell&&gs){gs.value=p.sell;gs.setAttribute("data-from-prod",p.id);}
       var ge=$("#g_ent");
       // 产品归属企业且当前未选企业/选的是别的企业时，自动同步企业画像
       if(p&&p.entId&&ge&&ge.value!==p.entId){
