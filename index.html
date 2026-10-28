@@ -543,7 +543,7 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
     </div>
     <div class="spacer"></div>
     <div class="sync" id="syncBox"><span class="dot"></span><span id="syncTxt">本地存储</span><button class="syncbtn" id="btnSyncNow" title="立即与云端同步（多端数据）">⟳ 同步</button></div>
-    <span id="appVer" title="点击强制刷新到最新版本" style="font-size:11px;color:#94a3b8;cursor:pointer;user-select:none;margin-right:4px">v20261028a</span>
+    <span id="appVer" title="点击强制刷新到最新版本" style="font-size:11px;color:#94a3b8;cursor:pointer;user-select:none;margin-right:4px">v20261029a</span>
     <button class="iconbtn" id="btnTheme" title="切换深色模式">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg>
     </button>
@@ -1702,7 +1702,7 @@ function showDiag(){
   $("#diagBody").textContent=lines.join("\n");
   $("#diagMask").style.display="flex";
 }
-var BUILD_ID="2026-10-28 13:36";
+var BUILD_ID="2026-10-29 10:00";
 var _kbMem=lsGet("kbl",[])||[]; // 知识库完整内容驻留内存（云端为唯一真相源）；localStorage 仅持久化轻量元数据，规避微信端 localStorage 配额（约5MB）超限导致清理缓存后无法恢复
 var _cloudLoading=false; // 首次云端同步进行中标志：列表空态据此显示「正在同步」而非「还是空的」
 function stripKbHeavy(d){if(!d)return d;var MAX=1*1024*1024;function trim(s){return (typeof s==="string"&&s.length>MAX)?s.slice(0,MAX):s;}return {id:d.id,name:d.name,type:d.type||"",size:d.size||0,uploadedAt:d.uploadedAt||"",category:d.category||"",kind:d.kind||"",preview:(d.text||"").slice(0,500),html:trim(d.html),text:trim(d.text),data:(typeof d.data==="string"&&d.data.length>MAX)?null:d.data};} // 端侧持久化完整 html/text/data(单文档≤1MB，超出仍只存预览)，避免未联网/同步失败时刷新丢内容；云端仍为主同步源
@@ -2083,7 +2083,6 @@ function renderEnt(){
       '<div class="top"><div class="ti">'+esc(r.name)+'</div>'+(r.tone?'<span class="chip">'+esc(r.tone)+'</span>':'')+'</div>'+
       '<div class="meta ent-meta">'
       +'<span class="ent-ind" title="'+(r.industry?esc(r.industry):"")+'">🏭 '+(r.industry?esc(r.industry):"—")+'</span>'
-      +(r.product?'<span class="ent-prod" title="'+esc(r.product)+'">📦 '+esc(r.product)+'</span>':'')
       +(r.audience?'<span class="ent-aud" title="'+esc(r.audience)+'">🎯 '+esc(r.audience)+'</span>':'')
       +'</div>'+
       '<div class="acts"><button class="btn ghost sm act-edit">编辑</button><button class="btn danger sm act-del">删除</button></div>'+
@@ -2107,9 +2106,7 @@ function entFields(){
     name:$("#e2_name").value.trim(),
     industry:$("#e2_ind").value.trim(),
     slogan:$("#e2_slogan").value.trim(),
-    product:$("#e2_prod").value.trim(),
     audience:$("#e2_aud").value.trim(),
-    selling:$("#e2_sell").value.trim(),
     tone:$("#e2_tone").value,
     website:$("#e2_site").value.trim(),
     keywords:$("#e2_kw").value.trim(),
@@ -2124,9 +2121,7 @@ function openEntEdit(id){
     '<div class="row2"><div class="field"><label>所属行业</label><input id="e2_ind" value="'+esc(r.industry||"")+'"></div>'+
     '<div class="field"><label>品牌调性</label><select id="e2_tone">'+["专业严谨","亲切温暖","年轻活力","高端奢华","科技未来"].map(function(t){return '<option '+(t===r.tone?"selected":"")+'>'+t+'</option>';}).join("")+'</select></div></div>'+
     '<div class="field"><label>品牌定位 / Slogan</label><input id="e2_slogan" value="'+esc(r.slogan||"")+'"></div>'+
-    '<div class="field"><label>核心产品 / 服务</label><input id="e2_prod" value="'+esc(r.product||"")+'"></div>'+
     '<div class="field"><label>目标人群</label><input id="e2_aud" value="'+esc(r.audience||"")+'"></div>'+
-    '<div class="field"><label>核心卖点 / 差异化</label><textarea id="e2_sell">'+esc(r.selling||"")+'</textarea></div>'+
     '<div class="row2"><div class="field"><label>官网</label><input id="e2_site" value="'+esc(r.website||"")+'"></div>'+
     '<div class="field"><label>品牌关键词</label><input id="e2_kw" value="'+esc(r.keywords||"")+'"></div></div>'+
     '<div class="field"><label>表述禁忌</label><input id="e2_avoid" value="'+esc(r.avoid||"")+'"></div>'+
@@ -2149,9 +2144,7 @@ function openEntAdd(){
     '<div class="row2"><div class="field"><label>所属行业</label><input id="e2_ind" placeholder="如：消费电子"></div>'+
     '<div class="field"><label>品牌调性</label><select id="e2_tone"><option>专业严谨</option><option>亲切温暖</option><option>年轻活力</option><option>高端奢华</option><option>科技未来</option></select></div></div>'+
     '<div class="field"><label>品牌定位 / Slogan</label><input id="e2_slogan" placeholder="如：为通勤者而生"></div>'+
-    '<div class="field"><label>核心产品 / 服务</label><input id="e2_prod" placeholder="如：降噪耳机、智能音箱"></div>'+
     '<div class="field"><label>目标人群</label><input id="e2_aud" placeholder="如：城市通勤族、学生党"></div>'+
-    '<div class="field"><label>核心卖点 / 差异化</label><textarea id="e2_sell" placeholder="如：自研降噪芯片、40h 续航"></textarea></div>'+
     '<div class="row2"><div class="field"><label>官网</label><input id="e2_site" placeholder="https://"></div>'+
     '<div class="field"><label>品牌关键词</label><input id="e2_kw" placeholder="逗号分隔"></div></div>'+
     '<div class="field"><label>表述禁忌 <span class="hint">选填，生成时规避</span></label><input id="e2_avoid" placeholder="如：绝对、第一（避免违规）"></div>'+
@@ -2758,10 +2751,7 @@ function buildPrompt(){
     p+="品牌："+ent.name+"\n";
     if(ent.industry)p+="行业："+ent.industry+"\n";
     if(ent.slogan)p+="定位："+ent.slogan+"\n";
-    // 已通过「产品管理」选定具体产品时，不再重复输出企业画像里的自由文本"核心产品"，避免口径冲突
-    if(ent.product&&!_gp.productId)p+="核心产品："+ent.product+"\n";
     if(ent.audience)p+="目标人群："+ent.audience+"\n";
-    if(ent.selling)p+="核心卖点："+ent.selling+"\n";
     if(ent.tone)p+="品牌调性："+ent.tone+"\n";
     if(ent.keywords)p+="品牌关键词："+ent.keywords+"\n";
     if(ent.avoid)p+="表述禁忌（避免）："+ent.avoid+"\n";
