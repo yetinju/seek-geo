@@ -543,7 +543,7 @@ try{if(localStorage.getItem("wb_geo_geo_auth")!=null)document.body.classList.add
     </div>
     <div class="spacer"></div>
     <div class="sync" id="syncBox"><span class="dot"></span><span id="syncTxt">本地存储</span><button class="syncbtn" id="btnSyncNow" title="立即与云端同步（多端数据）">⟳ 同步</button></div>
-    <span id="appVer" title="点击强制刷新到最新版本" style="font-size:11px;color:#94a3b8;cursor:pointer;user-select:none;margin-right:4px">v20261029a</span>
+    <span id="appVer" title="点击强制刷新到最新版本" style="font-size:11px;color:#94a3b8;cursor:pointer;user-select:none;margin-right:4px">v20261029b</span>
     <button class="iconbtn" id="btnTheme" title="切换深色模式">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg>
     </button>
@@ -1702,7 +1702,7 @@ function showDiag(){
   $("#diagBody").textContent=lines.join("\n");
   $("#diagMask").style.display="flex";
 }
-var BUILD_ID="2026-10-29 10:00";
+var BUILD_ID="2026-10-29 15:00";
 var _kbMem=lsGet("kbl",[])||[]; // 知识库完整内容驻留内存（云端为唯一真相源）；localStorage 仅持久化轻量元数据，规避微信端 localStorage 配额（约5MB）超限导致清理缓存后无法恢复
 var _cloudLoading=false; // 首次云端同步进行中标志：列表空态据此显示「正在同步」而非「还是空的」
 function stripKbHeavy(d){if(!d)return d;var MAX=1*1024*1024;function trim(s){return (typeof s==="string"&&s.length>MAX)?s.slice(0,MAX):s;}return {id:d.id,name:d.name,type:d.type||"",size:d.size||0,uploadedAt:d.uploadedAt||"",category:d.category||"",kind:d.kind||"",preview:(d.text||"").slice(0,500),html:trim(d.html),text:trim(d.text),data:(typeof d.data==="string"&&d.data.length>MAX)?null:d.data};} // 端侧持久化完整 html/text/data(单文档≤1MB，超出仍只存预览)，避免未联网/同步失败时刷新丢内容；云端仍为主同步源
@@ -3569,10 +3569,74 @@ function delTrain(id){
   renderTrain();toast("已删除");
 }
 function safeName(s){return String(s||"未命名范文").replace(/[\\/:*?"<>|\r\n]+/g,"_").slice(0,80)||"未命名范文";}
+/* 行内 Markdown → HTML（加粗 / 行内代码）；文本已 esc 转义，安全 */
+function mdInline(s){
+  return s
+    .replace(/\*\*([^*]+)\*\*/g,"<b>$1</b>")
+    .replace(/`([^`]+)`/g,"<code>$1</code>");
+}
+function mdSplitRow(line){
+  return line.replace(/^\|/,"").replace(/\|$/,"").replace(/\\\|/g,"｜").split("|").map(function(c){return c.trim();});
+}
 function bodyToHtml(text){
   if(!text)return "<p>（空）</p>";
   var safe=esc(text).replace(/\r\n/g,"\n");
-  return safe.split(/\n{2,}/).map(function(p){return "<p>"+p.replace(/\n/g,"<br>")+"</p>";}).join("");
+  var lines=safe.split("\n"),out=[],i=0,pbuf=[];
+  function flushP(){if(pbuf.length){out.push("<p>"+pbuf.map(mdInline).join("<br>")+"</p>");pbuf=[];}}
+  while(i<lines.length){
+    var t=lines[i].trim();
+    /* Markdown 表格：当前行是 |...| 且下一行是 |---|---| 分隔行 */
+    if(/^\|.*\|$/.test(t)&&i+1<lines.length&&/^\|[\s:\-|]+\|?$/.test(lines[i+1].trim())&&lines[i+1].indexOf("-")>=0){
+      flushP();
+      var head=mdSplitRow(t);i+=2;
+      var rows=[head];
+      while(i<lines.length&&/^\|.*\|?$/.test(lines[i].trim())&&lines[i].indexOf("|")>=0){rows.push(mdSplitRow(lines[i].trim()));i++;}
+      var th="<table border=\"1\" cellspacing=\"0\" cellpadding=\"6\" style=\"border-collapse:collapse;font-family:Microsoft YaHei,SimSun,sans-serif;font-size:12pt\">"+
+        "<tr>"+head.map(function(c){return "<th style=\"background:#eef3f8;text-align:left\">"+mdInline(c)+"</th>";}).join("")+"</tr>";
+      rows.slice(1).forEach(function(r){
+        while(r.length<head.length)r.push("");
+        th+="<tr>"+r.slice(0,head.length).map(function(c){return "<td style=\"vertical-align:top\">"+mdInline(c)+"</td>";}).join("")+"</tr>";
+      });
+      out.push(th+"</table>");
+      continue;
+    }
+    /* 标题：# → h2（h1 已被文章标题占用），## → h3，### → h4 */
+    var hm=t.match(/^(#{1,4})\s+(.+)$/);
+    if(hm){
+      flushP();
+      var lv=Math.min(hm[1].length+1,5);
+      out.push("<h"+lv+">"+mdInline(hm[2])+"</h"+lv+">");
+      i++;continue;
+    }
+    /* 分隔线 */
+    if(/^(-{3,}|\*{3,}|_{3,})$/.test(t)){flushP();out.push("<hr>");i++;continue;}
+    /* 无序列表 */
+    if(/^[-*+]\s+/.test(t)){
+      flushP();
+      var ul=[];
+      while(i<lines.length&&/^[-*+]\s+/.test(lines[i].trim())){ul.push("<li>"+mdInline(lines[i].trim().replace(/^[-*+]\s+/,""))+"</li>");i++;}
+      out.push("<ul>"+ul.join("")+"</ul>");continue;
+    }
+    /* 有序列表（含中文常用 1、） */
+    if(/^\d+[.、]\s*/.test(t)){
+      flushP();
+      var ol=[];
+      while(i<lines.length&&/^\d+[.、]\s*/.test(lines[i].trim())){ol.push("<li>"+mdInline(lines[i].trim().replace(/^\d+[.、]\s*/,""))+"</li>");i++;}
+      out.push("<ol>"+ol.join("")+"</ol>");continue;
+    }
+    /* 引用块 */
+    if(/^>\s?/.test(t)){
+      flushP();
+      var q=[];
+      while(i<lines.length&&/^>\s?/.test(lines[i].trim())){q.push(mdInline(lines[i].trim().replace(/^>\s?/,"")));i++;}
+      out.push("<blockquote style=\"border-left:3px solid #94a3b8;margin:8px 0;padding:4px 12px;color:#475569\">"+q.join("<br>")+"</blockquote>");continue;
+    }
+    if(t===""){flushP();}
+    else{pbuf.push(t);}
+    i++;
+  }
+  flushP();
+  return out.join("");
 }
 function downloadTrainWord(r){
   var title=r.title||"未命名范文";
